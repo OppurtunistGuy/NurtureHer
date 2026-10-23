@@ -37,3 +37,9 @@ This was internal browser QA, not a published interactive URL. Camera/media, phy
 Six additional tests cover verbatim agreement installation, one-time migration with archived terms, deferred installation while paused, RED and YELLOW locking for both roles, and keeping negotiated additions separate from the supplied document. The rendered workflow also checks the agreement heading and section availability. Type checking, lint, production build and all 11 SSR routes pass after this update.
 
 A Chrome check of `/agreements` confirmed all seven section headings plus Final Understanding, archived previous terms, both safety controls, and an available acknowledgement action. No acknowledgement was made on behalf of either person. This check does not constitute acceptance of the agreement.
+
+## GitHub UAT quality gate
+
+The source is now tracked in `OppurtunistGuy/NurtureHer`. `UAT` is tested before promotion to the existing production branch `main`. GitHub Actions repeats the checks on a clean Ubuntu runner and retains the tested build. Production PRs must originate from this repository's `UAT` and reference a head SHA with a successful UAT push run.
+
+The first remote SSR check exposed ANSI color codes inside Vite's printed URL. The readiness matcher now strips terminal control characters; a local run with `FORCE_COLOR=1` checks this regression, and the subsequent remote UAT run passed all checks. Dependency auditing identified the existing Vite 8.1.5 development-server advisories; Vite is updated to 8.3.5, with a high/critical audit check added to CI. The final revision is subject to the same full UAT and PR checks before merge. Branch protection and hosting remain unconfigured as described in `RELEASE.md`.

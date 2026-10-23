@@ -8,7 +8,7 @@ This repository uses exactly two working branches:
 ## Promotion
 
 1. Commit changes to `UAT` and wait for **Nocturne CI / Quality gate** to pass on that exact commit.
-2. Review the tested behavior in UAT. Automated checks cover TypeScript, lint, domain/workflow tests, 11 server routes and the production build. Device and real-user acceptance are separate checks.
+2. Review the tested behavior in UAT. Automated checks cover dependency advisories (high/critical findings fail), TypeScript, lint, domain/workflow tests, 11 server routes and the production build. Device and real-user acceptance are separate checks.
 3. Open a pull request from `UAT` to `main`. Its quality gate requires a successful UAT push run for the same head SHA, then tests the proposed merge again. A different source branch or a fork fails the promotion check.
 4. Merge only after the PR check passes, using a normal merge commit. Do not squash, rebase or force push published history.
 5. Keep `UAT` for subsequent changes. If production changes outside this flow, merge `main` back into `UAT` before continuing.
