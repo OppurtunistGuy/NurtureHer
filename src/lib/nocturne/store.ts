@@ -209,6 +209,7 @@ function connect(snapshot: SpaceSnapshot) {
   if (
     state.space.id === snapshot.state.space.id &&
     connection.revision === snapshot.revision &&
+    connection.invite?.token === snapshot.invite?.token &&
     connection.status === "connected" &&
     !connection.error
   )

@@ -108,7 +108,7 @@ try {
   await owner.getByRole("button", { name: "New routine", exact: true }).click();
   await owner.getByLabel("Title", { exact: true }).fill("Browser test routine");
   await owner.getByLabel("Instructions", { exact: true }).fill("A short text check-in.");
-  await owner.getByRole("button", { name: "Save routine", exact: true }).click();
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
   await owner.getByRole("heading", { name: "Browser test routine", exact: true }).waitFor();
   await guest.goto(`${origin}/routines`);
   await guest.getByRole("heading", { name: "Browser test routine", exact: true }).waitFor();
@@ -156,6 +156,32 @@ try {
     true,
   );
   console.log("PASS browser: used invitation cannot admit a third person");
+  const failureContext = await browser.newContext();
+  const failurePage = await failureContext.newPage();
+  await failurePage.route("**/api/space", async (route) => {
+    if (route.request().method() === "POST" && route.request().postDataJSON()?.op === "create")
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Test connection unavailable. Retry creation." }),
+      });
+    else await route.continue();
+  });
+  await failurePage.goto(origin);
+  await failurePage.getByLabel("Your name", { exact: true }).fill("Demo Retry");
+  await failurePage.getByRole("checkbox").check();
+  await failurePage.getByRole("button", { name: "Create my space", exact: true }).click();
+  await failurePage.getByRole("alert").filter({ hasText: "Test connection unavailable" }).waitFor();
+  assert.equal(new URL(failurePage.url()).pathname, "/");
+  assert.equal(
+    await failurePage.getByLabel("Your name", { exact: true }).inputValue(),
+    "Demo Retry",
+  );
+  assert.equal(await failurePage.getByLabel("Share this invitation", { exact: true }).count(), 0);
+  await failurePage.unroute("**/api/space");
+  await failurePage.getByRole("button", { name: "Create my space", exact: true }).click();
+  await failurePage.getByRole("heading", { name: "Your space is ready", exact: true }).waitFor();
+  console.log("PASS browser: a failed create preserves the form and retries without false success");
   assert.deepEqual(errors, [], `Browser runtime errors: ${errors.join("; ")}`);
 } finally {
   await browser?.close();
