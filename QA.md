@@ -2,18 +2,18 @@
 
 Date: 23 October 2026. Local environment: Node 24.19.0 / npm 11.9.0.
 
-| Check                                                               | Result                                                                             |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Unit, domain, rendered workflow, AI provider and shared API tests   | PASS: 145 tests in 9 files                                                         |
-| TypeScript                                                          | PASS                                                                               |
-| ESLint                                                              | PASS: 0 errors; 7 existing Fast Refresh warnings                                   |
-| Server-rendered page routes                                         | PASS: 11 routes                                                                    |
-| Production build                                                    | PASS: client, SSR and Nitro node-server output                                     |
-| Production API startup                                              | PASS: built Node server responds to anonymous session lookup                       |
-| Dependency audit                                                    | PASS: zero vulnerabilities                                                         |
-| Local Playwright execution                                          | BLOCKED: browser download returned a truncated archive; no browser installed       |
-| GitHub extended browser acceptance                                  | PASS on UAT application commit daeb160; Actions run 39990917314                    |
-| Physical phones, Safari, Firefox, penetration test, container build | NOT PERFORMED                                                                      |
+| Check                                                               | Result                                                                       |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Unit, domain, rendered workflow, AI provider and shared API tests   | PASS: 147 tests in 9 files                                                   |
+| TypeScript                                                          | PASS                                                                         |
+| ESLint                                                              | PASS: 0 errors; 7 existing Fast Refresh warnings                             |
+| Server-rendered page routes                                         | PASS: 11 routes                                                              |
+| Production build                                                    | PASS: client, SSR and Nitro node-server output                               |
+| Production API startup                                              | PASS: built Node server responds to anonymous session lookup                 |
+| Dependency audit                                                    | PASS: zero vulnerabilities                                                   |
+| Local Playwright execution                                          | BLOCKED: browser download returned a truncated archive; no browser installed |
+| GitHub extended browser acceptance                                  | PASS on UAT application commit daeb160; Actions run 39990917314              |
+| Physical phones, Safari, Firefox, penetration test, container build | NOT PERFORMED                                                                |
 
 ## Why the former tests missed the basic flow
 
@@ -26,6 +26,7 @@ The original 73 tests covered a local demo, role rules and rendering. They did n
 - Seven-day expiry, link replacement and creator access after expiry.
 - Multiple private relationships retain the same browser identity without replacing existing spaces. One Master can have several Subs and one Sub several Masters; roles can differ per space.
 - Scoped writes, outsider-space rejection, ambiguous legacy-write rejection, own-invitation rejection, independent agreements, identical routine IDs and pause isolation.
+- RED during an in-flight space switch keeps controls locked until all requests settle; late stop responses cannot reopen a different relationship after a create completes.
 - Legacy membership migration preserves both sessions and saved records; a consistent backup is created once before migration.
 - Reload-equivalent reads and persistence across closing/reopening the SQLite repository.
 - Own-name update visible to the other member; server-derived role prevents switching to the other role.

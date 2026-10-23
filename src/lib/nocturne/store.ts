@@ -295,6 +295,8 @@ async function changeSpace(body: Record<string, unknown>): Promise<ActionResult>
     body["op"] === "command" && (body["command"] as Command | undefined)?.type === "pause";
   if (connection.busy && !safetyStop)
     return { ok: false, error: "Wait for the current change to finish." };
+  const targetSpace = state.space.id;
+  const scoped = ["command", "profile", "rotate"].includes(String(body["op"]));
   generation++;
   inFlight++;
   connection = { ...connection, busy: true };
@@ -302,19 +304,18 @@ async function changeSpace(body: Record<string, unknown>): Promise<ActionResult>
   try {
     const { response, data } = await requestSpace({
       ...body,
-      ...(["command", "profile", "rotate"].includes(String(body["op"]))
-        ? { spaceId: state.space.id }
-        : {}),
+      ...(scoped ? { spaceId: targetSpace } : {}),
     });
     if (!response.ok) {
-      if (data.snapshot) connect(data.snapshot as SpaceSnapshot);
+      if (data.snapshot && (!scoped || state.space.id === targetSpace))
+        connect(data.snapshot as SpaceSnapshot);
       throw new Error(data.error ?? "The change could not be saved. Please retry.");
     }
-    connect(data as SpaceSnapshot);
+    if (!scoped || state.space.id === targetSpace) connect(data as SpaceSnapshot);
     return { ok: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not save this change.";
-    connection = { ...connection, error: message };
+    if (!scoped || state.space.id === targetSpace) connection = { ...connection, error: message };
     toast.error(message);
     return { ok: false, error: message };
   } finally {
@@ -334,6 +335,7 @@ export const spaceActions = {
     if (connection.busy) return { ok: false, error: "Wait for the current change to finish." };
     generation++;
     const selected = generation;
+    inFlight++;
     connection = { ...connection, busy: true };
     emit();
     try {
@@ -347,7 +349,8 @@ export const spaceActions = {
       toast.error(error);
       return { ok: false, error };
     } finally {
-      connection = { ...connection, busy: false };
+      inFlight--;
+      connection = { ...connection, busy: inFlight > 0 };
       emit();
     }
   },
