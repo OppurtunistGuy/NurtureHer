@@ -22,7 +22,7 @@ function TodayPage() {
     const id = window.setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(id);
   }, []);
-  const date = dateKey(now),
+  const date = dateKey(now, s.space.timeZone),
     dom = s.viewRole === "dom",
     ready = agreementReady(s);
   const items = s.routines
@@ -39,6 +39,7 @@ function TodayPage() {
           { ...r, ...(rec?.dueTimeOverride ? { dueTime: rec.dueTimeOverride } : {}) },
           status,
           now,
+          s.space.timeZone,
         ),
       };
     });
@@ -50,6 +51,7 @@ function TodayPage() {
         weekday: "long",
         month: "long",
         day: "numeric",
+        ...(s.space.timeZone ? { timeZone: s.space.timeZone } : {}),
       })}
       title={dom ? `Good day, ${s.names.dom}` : `Your routine, ${s.names.sub}`}
     >

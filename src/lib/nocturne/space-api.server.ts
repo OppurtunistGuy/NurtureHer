@@ -4,9 +4,27 @@ import { SpaceError, SpaceRepository, SESSION_SECONDS } from "./space-repository
 const name = z.string().trim().min(1, "Enter your name.").max(40),
   token = z.string().regex(/^[a-f0-9]{64}$/),
   revision = z.number().int().min(1);
+const timeZone = z
+  .string()
+  .max(80)
+  .refine((value) => {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: value });
+      return true;
+    } catch {
+      return false;
+    }
+  })
+  .default("UTC");
 const requestSchema = z.discriminatedUnion("op", [
   z
-    .object({ op: z.literal("create"), name, role: z.enum(["dom", "sub"]), adult: z.literal(true) })
+    .object({
+      op: z.literal("create"),
+      name,
+      role: z.enum(["dom", "sub"]),
+      adult: z.literal(true),
+      timeZone,
+    })
     .strict(),
   z.object({ op: z.literal("preview"), token }).strict(),
   z.object({ op: z.literal("join"), name, token, adult: z.literal(true) }).strict(),
@@ -77,7 +95,7 @@ export async function handleSpaceRequest(
     if (input.op === "create" || input.op === "join") {
       const result =
         input.op === "create"
-          ? db.create(input.name, input.role, session)
+          ? db.create(input.name, input.role, session, input.timeZone)
           : db.join(input.token, input.name, session);
       headers.set(
         "set-cookie",

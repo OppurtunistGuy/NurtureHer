@@ -6,7 +6,8 @@ import { z } from "zod";
 import { createInitialState } from "./initial-state";
 import { savedStateSchema } from "./storage";
 import { transition, type Command } from "./engine";
-import { upgradeAgreement } from "./agreement-document";
+import { createAgreement, upgradeAgreement } from "./agreement-document";
+import { dateKey } from "./logic";
 import type { AppState, Role } from "./types";
 import type { SpaceSnapshot } from "./space-protocol";
 
@@ -222,7 +223,7 @@ export class SpaceRepository {
       .run(hash(token), spaceId, role, this.now().valueOf() + SESSION_SECONDS * 1000);
     return token;
   }
-  create(name: string, role: Role, session = "") {
+  create(name: string, role: Role, session = "", timeZone = "UTC") {
     return this.transaction(() => {
       this.available(session);
       const initial = createInitialState(),
@@ -235,7 +236,8 @@ export class SpaceRepository {
         viewRole: role,
         names: { ...initial.names, [role]: name },
         routines: [],
-        space: { mode: "shared", id: spaceId, paired: false, inviteCode: "" },
+        agreement: createAgreement(dateKey(this.now(), timeZone)),
+        space: { mode: "shared", id: spaceId, paired: false, inviteCode: "", timeZone },
         activity: [
           {
             id: randomUUID(),

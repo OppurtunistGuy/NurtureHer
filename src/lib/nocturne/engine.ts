@@ -103,7 +103,7 @@ function validateRoutine(r: Routine) {
 export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
   const by = s.viewRole,
     at = ctx.now.toISOString(),
-    today = dateKey(ctx.now);
+    today = dateKey(ctx.now, s.space.timeZone);
   const log = (next: AppState, text: string, actor: Role | "system" = by): AppState => ({
     ...next,
     activity: [{ id: ctx.id(), at, by: actor, text }, ...next.activity].slice(0, 300),

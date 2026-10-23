@@ -80,6 +80,11 @@ export function SpaceConnection({ settings = false }: { settings?: boolean }) {
           Review your agreement together
         </Link>
       )}
+      {settings && s.space.timeZone && (
+        <p className="text-xs text-muted-foreground">
+          Shared schedule timezone: {s.space.timeZone}
+        </p>
+      )}
       {settings && (
         <form
           className="space-y-2 border-t pt-4"

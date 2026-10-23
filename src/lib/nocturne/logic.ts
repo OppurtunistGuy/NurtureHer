@@ -1,6 +1,17 @@
 import type { Routine, TaskRecord, TaskStatus } from "./types";
 
-export function dateKey(d: Date = new Date()): string {
+export function dateKey(d: Date = new Date(), timeZone?: string): string {
+  if (timeZone) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(d);
+    return ["year", "month", "day"]
+      .map((key) => parts.find((part) => part.type === key)!.value)
+      .join("-");
+  }
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -35,11 +46,30 @@ export function effectiveStatus(rec: TaskRecord | undefined, paused: boolean): T
   return rec?.status ?? "pending";
 }
 
+/** Minutes on the shared schedule's wall clock. */
+export function clockMinutes(now: Date, timeZone?: string): number {
+  if (!timeZone) return now.getHours() * 60 + now.getMinutes();
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  return (
+    Number(parts.find((part) => part.type === "hour")!.value) * 60 +
+    Number(parts.find((part) => part.type === "minute")!.value)
+  );
+}
 /** Overdue only flags for discussion; it never changes the status. */
-export function isOverdue(r: Routine, status: TaskStatus, now: Date = new Date()): boolean {
+export function isOverdue(
+  r: Routine,
+  status: TaskStatus,
+  now: Date = new Date(),
+  timeZone?: string,
+): boolean {
   if (status !== "pending") return false;
   const end = minutesOf(r.dueTime || r.windowEnd);
-  return now.getHours() * 60 + now.getMinutes() > end;
+  return clockMinutes(now, timeZone) > end;
 }
 
 export function recurrenceLabel(r: Routine): string {

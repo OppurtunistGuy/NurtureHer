@@ -34,6 +34,7 @@ export const savedStateSchema = z.object({
     paired: z.boolean(),
     mode: z.enum(["demo", "shared"]),
     id: z.string().optional(),
+    timeZone: z.string().optional(),
   }),
   routines: z.array(
     z.object({

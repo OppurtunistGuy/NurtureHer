@@ -301,7 +301,14 @@ export const uiActions = makeActions(async (command: Command): Promise<ActionRes
   return changeSpace({ op: "command", command, revision: connection.revision });
 });
 export const spaceActions = {
-  create: (name: string, role: Role) => changeSpace({ op: "create", name, role, adult: true }),
+  create: (name: string, role: Role) =>
+    changeSpace({
+      op: "create",
+      name,
+      role,
+      adult: true,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }),
   join: (name: string, token: string) => changeSpace({ op: "join", name, token, adult: true }),
   rename: (name: string) => changeSpace({ op: "profile", name, revision: connection.revision }),
   preview: async (token: string): Promise<{ creatorName: string; role: Role }> => {
@@ -311,5 +318,5 @@ export const spaceActions = {
   },
 };
 export function todayKey() {
-  return dateKey();
+  return dateKey(new Date(), state.space.timeZone);
 }

@@ -4,7 +4,7 @@ Date: 23 October 2026. Local environment: Node 24.19.0 / npm 11.9.0.
 
 | Check                                                               | Result                                                                             |
 | ------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Unit, domain, rendered workflow and shared API tests                | PASS: 92 tests in 7 files                                                          |
+| Unit, domain, rendered workflow and shared API tests                | PASS: 95 tests in 7 files                                                          |
 | TypeScript                                                          | PASS                                                                               |
 | ESLint                                                              | PASS: 0 errors; 7 existing Fast Refresh warnings                                   |
 | Server-rendered page routes                                         | PASS: 11 routes                                                                    |
@@ -29,6 +29,7 @@ The original 73 tests covered a local demo, role rules and rendering. They did n
 - Own-name update visible to the other member; server-derived role prevents switching to the other role.
 - Shared routine assignment, separate agreement acknowledgements, written submission and Master acceptance.
 - Stale revision rejection with a fresh snapshot and no duplicate write.
+- Shared task dates and deadline checks use the creator's timezone, including India/UTC midnight boundaries; unsupported zones are rejected.
 - Stale RED acceptance; server pause lock for both members; discussion and independent mutual resume.
 - Avoiding an unpaired pause that cannot be mutually resumed before a second member joins.
 - Server-stored expiring neutral prompts; the Master does not receive the other member's active challenge.

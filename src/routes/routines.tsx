@@ -210,7 +210,7 @@ function Editor({ r: init, onDone }: { r: Routine; onDone: () => void }) {
                     k === "daily"
                       ? { kind: "daily" }
                       : k === "once"
-                        ? { kind: "once", date: dateKey() }
+                        ? { kind: "once", date: dateKey(new Date(), s.space.timeZone) }
                         : { kind: "weekdays", days: [1, 2, 3, 4, 5] },
                 })
               }

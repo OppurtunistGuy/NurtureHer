@@ -67,7 +67,7 @@ function GoalsPage() {
                     title: "",
                     instructions: "",
                     criteria: "",
-                    dueDate: dateKey(),
+                    dueDate: dateKey(new Date(), s.space.timeZone),
                     category: "personal",
                     status: "active",
                   })

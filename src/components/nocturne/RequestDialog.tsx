@@ -99,7 +99,7 @@ export function RequestDialog({
               onClick={async () => {
                 const result = await actions.submitRequest({
                   kind,
-                  date: dateKey(),
+                  date: dateKey(new Date(), s.space.timeZone),
                   reason,
                   note: note.trim(),
                   ...(routine ? { routineId: routine.id } : {}),

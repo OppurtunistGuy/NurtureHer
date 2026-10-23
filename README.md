@@ -14,6 +14,8 @@ Invitations admit one person, expire after seven days and can be replaced by the
 
 The creator can be either role. Live roles are fixed by the server session; there is no live perspective switch. Each member can update their own name in Settings. Opening an invitation in a browser that already belongs to a space does not replace that space.
 
+The space uses the creator's detected timezone for both people's schedule, task dates and reminders. Settings shows that timezone; a differently configured server or partner device cannot move a check-in onto a different day.
+
 ## Test alone
 
 Choose **Try alone first** on the start page to open the separate browser-only demo with example routines. Its Settings page allows perspective switching. This is explicitly a solo simulation, not a connected partner. From an existing solo demo, Settings → **Create or join a shared space** starts real setup without deleting the saved demo.

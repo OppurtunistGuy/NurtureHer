@@ -43,11 +43,15 @@ try {
   }
   assert.ok(ready, `Shared API did not start: ${logs}`);
   browser = await chromium.launch({ headless: true, args: ["--no-sandbox"] });
-  const ownerContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const ownerContext = await browser.newContext({
+    viewport: { width: 1280, height: 900 },
+    timezoneId: "Asia/Kolkata",
+  });
   const guestContext = await browser.newContext({
     viewport: { width: 390, height: 844 },
     isMobile: true,
     hasTouch: true,
+    timezoneId: "Australia/Sydney",
   });
   const owner = await ownerContext.newPage(),
     guest = await guestContext.newPage();
@@ -109,10 +113,33 @@ try {
   await owner.getByLabel("Title", { exact: true }).fill("Browser test routine");
   await owner.getByLabel("Instructions", { exact: true }).fill("A short text check-in.");
   await owner.getByRole("button", { name: "Save", exact: true }).click();
-  await owner.getByRole("heading", { name: "Browser test routine", exact: true }).waitFor();
+  await owner.getByText("Browser test routine", { exact: true }).waitFor();
   await guest.goto(`${origin}/routines`);
-  await guest.getByRole("heading", { name: "Browser test routine", exact: true }).waitFor();
+  await guest.getByText("Browser test routine", { exact: true }).waitFor();
   assert.equal(await guest.getByRole("button", { name: "New routine", exact: true }).count(), 0);
+  for (const page of [owner, guest]) {
+    await page.goto(`${origin}/agreements`);
+    await page.getByRole("button", { name: "I acknowledge this agreement", exact: true }).click();
+    await page.getByRole("button", { name: "You've acknowledged", exact: true }).waitFor();
+  }
+  await guest.goto(`${origin}/today`);
+  const task = guest
+    .locator("li")
+    .filter({ has: guest.getByRole("heading", { name: "Browser test routine", exact: true }) });
+  await task.getByRole("button", { name: "Submit check-in", exact: true }).click();
+  await guest
+    .getByLabel("Your check-in", { exact: true })
+    .fill("Completed the shared browser task.");
+  await guest.getByRole("button", { name: "Submit for review", exact: true }).click();
+  await task.getByText("Awaiting review", { exact: true }).waitFor();
+  await owner.goto(`${origin}/proof`);
+  await owner.getByRole("button", { name: "Accept check-in", exact: true }).click();
+  await owner.getByText("No check-ins awaiting review.", { exact: true }).waitFor();
+  await guest.reload();
+  await guest.getByText("Completed", { exact: true }).waitFor();
+  console.log(
+    "PASS browser: independent agreement acknowledgements and shared-day submission/review across timezones",
+  );
   await owner.goto(`${origin}/notes`);
   await owner
     .getByRole("textbox", { name: "Message", exact: true })

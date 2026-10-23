@@ -74,6 +74,43 @@ const routine: Routine = {
 };
 
 describe("real shared-space requests with independent browser sessions", () => {
+  it("submits on the same shared day when the creator is ahead of the UTC server", async () => {
+    clock = new Date("2026-10-23T23:30:00Z");
+    const creator = new BrowserSession(),
+      partner = new BrowserSession();
+    await creator.request({
+      op: "create",
+      name: "Maya",
+      role: "dom",
+      adult: true,
+      timeZone: "Asia/Kolkata",
+    });
+    await partner.request({
+      op: "join",
+      name: "Aria",
+      token: creator.snapshot.invite!.token,
+      adult: true,
+    });
+    await creator.request();
+    await creator.command({
+      type: "routine.save",
+      routine: { ...routine, recurrence: { kind: "once", date: "2026-10-24" } },
+    });
+    await creator.command({ type: "agreement.ack" });
+    await partner.request();
+    await partner.command({ type: "agreement.ack" });
+    expect(
+      (
+        await partner.command({
+          type: "submission",
+          id: routine.id,
+          text: "Today's work completed.",
+        })
+      ).response.status,
+    ).toBe(200);
+    expect(partner.snapshot.state.submissions![0]!.date).toBe("2026-10-24");
+    expect(partner.snapshot.state.tasks).toHaveProperty("check-in:2026-10-24");
+  });
   it.each(["dom", "sub"] as const)(
     "creates as %s, previews, joins the opposite role and restores on both devices",
     async (role) => {
@@ -287,6 +324,19 @@ describe("real shared-space requests with independent browser sessions", () => {
 });
 
 describe("request and invitation boundaries", () => {
+  it("rejects unsupported timezones", async () => {
+    expect(
+      (
+        await new BrowserSession().request({
+          op: "create",
+          name: "Maya",
+          role: "dom",
+          adult: true,
+          timeZone: "Invalid/Moon",
+        })
+      ).response.status,
+    ).toBe(400);
+  });
   it("denies reading another space without a member session", async () => {
     await new BrowserSession().create();
     expect((await new BrowserSession().request()).response.status).toBe(401);

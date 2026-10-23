@@ -180,7 +180,13 @@ export interface AppState {
   myRole: Role;
   viewRole: Role;
   names: Record<Role, string>;
-  space: { inviteCode: string; paired: boolean; mode: "demo" | "shared"; id?: string };
+  space: {
+    inviteCode: string;
+    paired: boolean;
+    mode: "demo" | "shared";
+    id?: string;
+    timeZone?: string;
+  };
   routines: Routine[];
   tasks: Record<string, TaskRecord>;
   requests: PartnerRequest[];
