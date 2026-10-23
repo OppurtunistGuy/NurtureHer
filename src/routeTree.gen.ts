@@ -21,6 +21,7 @@ import { Route as RoutinesRouteImport } from './routes/routines'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TodayRouteImport } from './routes/today'
 import { Route as ApiSpaceRouteImport } from './routes/api.space'
+import { Route as ApiSpaceTelegramRouteImport } from './routes/api.space.telegram'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -82,6 +83,11 @@ const ApiSpaceRoute = ApiSpaceRouteImport.update({
   path: '/api/space',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSpaceTelegramRoute = ApiSpaceTelegramRouteImport.update({
+  id: '/telegram',
+  path: '/telegram',
+  getParentRoute: () => ApiSpaceRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -95,7 +101,8 @@ export interface FileRoutesByFullPath {
   '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
   '/today': typeof TodayRoute
-  '/api/space': typeof ApiSpaceRoute
+  '/api/space': typeof ApiSpaceRouteWithChildren
+  '/api/space/telegram': typeof ApiSpaceTelegramRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -109,7 +116,8 @@ export interface FileRoutesByTo {
   '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
   '/today': typeof TodayRoute
-  '/api/space': typeof ApiSpaceRoute
+  '/api/space': typeof ApiSpaceRouteWithChildren
+  '/api/space/telegram': typeof ApiSpaceTelegramRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -124,7 +132,8 @@ export interface FileRoutesById {
   '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
   '/today': typeof TodayRoute
-  '/api/space': typeof ApiSpaceRoute
+  '/api/space': typeof ApiSpaceRouteWithChildren
+  '/api/space/telegram': typeof ApiSpaceTelegramRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/today'
     | '/api/space'
+    | '/api/space/telegram'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/today'
     | '/api/space'
+    | '/api/space/telegram'
   id:
     | '__root__'
     | '/'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/today'
     | '/api/space'
+    | '/api/space/telegram'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -183,7 +195,7 @@ export interface RootRouteChildren {
   RoutinesRoute: typeof RoutinesRoute
   SettingsRoute: typeof SettingsRoute
   TodayRoute: typeof TodayRoute
-  ApiSpaceRoute: typeof ApiSpaceRoute
+  ApiSpaceRoute: typeof ApiSpaceRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -272,8 +284,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSpaceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/space/telegram': {
+      id: '/api/space/telegram'
+      path: '/telegram'
+      fullPath: '/api/space/telegram'
+      preLoaderRoute: typeof ApiSpaceTelegramRouteImport
+      parentRoute: typeof ApiSpaceRoute
+    }
   }
 }
+
+interface ApiSpaceRouteChildren {
+  ApiSpaceTelegramRoute: typeof ApiSpaceTelegramRoute
+}
+
+const ApiSpaceRouteChildren: ApiSpaceRouteChildren = {
+  ApiSpaceTelegramRoute: ApiSpaceTelegramRoute,
+}
+
+const ApiSpaceRouteWithChildren = ApiSpaceRoute._addFileChildren(
+  ApiSpaceRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -287,7 +318,7 @@ const rootRouteChildren: RootRouteChildren = {
   RoutinesRoute: RoutinesRoute,
   SettingsRoute: SettingsRoute,
   TodayRoute: TodayRoute,
-  ApiSpaceRoute: ApiSpaceRoute,
+  ApiSpaceRoute: ApiSpaceRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

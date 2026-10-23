@@ -1,19 +1,19 @@
-# Validation report — create/share/join
+# Validation report — relationships, AI drafts and Telegram receipts
 
 Date: 23 October 2026. Local environment: Node 24.19.0 / npm 11.9.0.
 
-| Check                                                               | Result                                                                             |
-| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Unit, domain, rendered workflow and shared API tests                | PASS: 95 tests in 7 files                                                          |
-| TypeScript                                                          | PASS                                                                               |
-| ESLint                                                              | PASS: 0 errors; 7 existing Fast Refresh warnings                                   |
-| Server-rendered page routes                                         | PASS: 11 routes                                                                    |
-| Production build                                                    | PASS: client, SSR and Nitro node-server output                                     |
-| Production API startup                                              | PASS: built Node server responds to anonymous session lookup                       |
-| Dependency audit                                                    | PASS: zero vulnerabilities                                                         |
-| Local Playwright execution                                          | BLOCKED: browser download returned a truncated archive; no browser installed       |
-| GitHub two-browser acceptance                                       | Mandatory CI step; inspect the matching UAT/PR commit's Actions run for its result |
-| Physical phones, Safari, Firefox, penetration test, container build | NOT PERFORMED                                                                      |
+| Check                                                               | Result                                                                       |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Unit, domain, rendered workflow, AI provider and shared API tests   | PASS: 147 tests in 9 files                                                   |
+| TypeScript                                                          | PASS                                                                         |
+| ESLint                                                              | PASS: 0 errors; 7 existing Fast Refresh warnings                             |
+| Server-rendered page routes                                         | PASS: 11 routes                                                              |
+| Production build                                                    | PASS: client, SSR and Nitro node-server output                               |
+| Production API startup                                              | PASS: built Node server responds to anonymous session lookup                 |
+| Dependency audit                                                    | PASS: zero vulnerabilities                                                   |
+| Local Playwright execution                                          | BLOCKED: browser download returned a truncated archive; no browser installed |
+| GitHub extended browser acceptance                                  | PASS on UAT application commit daeb160; Actions run 39990917314              |
+| Physical phones, Safari, Firefox, penetration test, container build | NOT PERFORMED                                                                |
 
 ## Why the former tests missed the basic flow
 
@@ -24,7 +24,10 @@ The original 73 tests covered a local demo, role rules and rendering. They did n
 - Creation as either role, preview, opposite-role assignment and joining the identical space.
 - Waiting status before joining, consumed links, third-person rejection and simultaneous redemption attempts.
 - Seven-day expiry, link replacement and creator access after expiry.
-- Existing-member protection; a new create/join attempt cannot replace the browser's current space.
+- Multiple private relationships retain the same browser identity without replacing existing spaces. One Master can have several Subs and one Sub several Masters; roles can differ per space.
+- Scoped writes, outsider-space rejection, ambiguous legacy-write rejection, own-invitation rejection, independent agreements, identical routine IDs and pause isolation.
+- RED during an in-flight space switch keeps controls locked until all requests settle; late stop responses cannot reopen a different relationship after a create completes.
+- Legacy membership migration preserves both sessions and saved records; a consistent backup is created once before migration.
 - Reload-equivalent reads and persistence across closing/reopening the SQLite repository.
 - Own-name update visible to the other member; server-derived role prevents switching to the other role.
 - Shared routine assignment, separate agreement acknowledgements, written submission and Master acceptance.
@@ -43,4 +46,10 @@ GitHub Actions installs Chromium and must pass this test on UAT before promotion
 
 ## Deployment and privacy boundaries
 
-No public production URL, hosting account or branch protection is configured. The application now has a real shared server repository, but it requires a reachable Node 24 server with persistent storage. It is not deployable as static HTML or a default Cloudflare Worker. Shared membership uses an anonymous browser cookie, without account login/recovery or E2EE. Camera/media and photographic verification remain absent. Use example data while testing.
+The extended browser script covers multiple partners in both directions, per-tab selection, reload persistence, discarding an unsaved editor on a space switch and retaining each space's pause. AI editor acceptance uses a mocked external draft response and verifies nothing is saved until explicit Save. Provider contract tests validate the actual adapter with mocked HTTP envelopes, invalid fields, refusal, failures, bounded responses and timeouts. API tests enforce member/Master access and pause. A paid live AI request has not been made.
+
+Telegram tests simulate authenticated updates through the HTTP handler and transactional repository: distinct linked accounts, consumed links, both yes, a no, expired instructions/day, duplicate delivery, media metadata exclusion, outsider rejection, setup absence, consent/preparation and pause lock. Extended browser acceptance posts simulated webhook updates to the built Node route and waits for the receipt in both browser sessions. No real Telegram bot, real media or public webhook is connected by these tests.
+
+AI credentials and a Telegram HTTPS webhook require operator setup. Camera work is deferred; media files remain outside app storage. Isolation coverage does not establish concurrent production capacity. See the exact candidate's Actions run for the extended browser result.
+
+No public production URL, hosting account or branch protection is configured. The application now has a real shared server repository, but it requires a reachable Node 24 server with persistent storage. It is not deployable as static HTML or a default Cloudflare Worker. Shared membership uses an anonymous browser cookie, without account login/recovery or E2EE. Camera, in-app media storage and photographic verification remain absent. Use example data while testing.

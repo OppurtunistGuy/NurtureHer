@@ -12,7 +12,9 @@ A shared space for two, with separate pages for routines, goals, written check-i
 
 Invitations admit one person, expire after seven days and can be replaced by their creator before pairing. Replacing a link invalidates the old link. A used, expired or invalid invitation displays an explanation instead of creating a second space. Links contain a random invitation secret in the URL fragment, with no names, tasks or agreement text. Anyone holding an unused link can occupy its vacant place: share it directly with the intended person.
 
-The creator can be either role. Live roles are fixed by the server session; there is no live perspective switch. Each member can update their own name in Settings. Opening an invitation in a browser that already belongs to a space does not replace that space.
+The creator can be either role. Live roles are fixed by membership in each relationship; there is no live perspective switch. Each member can update their own name in Settings. **Add a space** creates or joins another relationship without replacing existing spaces. One Master can have multiple Subs, and one Sub can have multiple Masters. A person can have different roles in different relationships. Each relationship remains a separate private pair-space with its own agreement, tasks, notes, review and pause. Members cannot see their partner's other memberships.
+
+The header's **Active space** selector switches relationships. Selection is stored per tab, and every mutation identifies its space explicitly. Switching discards unsaved page editors so a draft cannot be accidentally saved into another relationship. Pausing one space does not pause or resume another. The same browser identity cannot redeem both places in one pair.
 
 The space uses the creator's detected timezone for both people's schedule, task dates and reminders. Settings shows that timezone; a differently configured server or partner device cannot move a check-in onto a different day.
 
@@ -24,7 +26,7 @@ To test a real invitation by yourself, use separate browser profiles or separate
 
 ## Run
 
-Requires Node 24 and npm. No external database account, signup service or secret API key is required.
+Requires Node 24 and npm. The core workflow needs no external database account, signup service or secret API key. AI and Telegram are optional server integrations.
 
 ```sh
 npm ci --ignore-scripts
@@ -65,7 +67,29 @@ The Master assigns and reviews; the Sub submits and requests changes. Acceptance
 
 ## Privacy limits
 
-No camera, media upload, tracking, intimate proof requirement, screenshot blocking or liveness/biometric verification is implemented. Written submissions are self-reported evidence for manual review. Shared text is readable on the server and by the two members; there is no end-to-end encryption. Same-origin scripts or a compromised browser/server can expose data. The public repository contains the supplied agreement, not live records or media.
+No camera, in-app media storage, tracking, intimate proof requirement, screenshot blocking or liveness/biometric verification is implemented. Camera work is deferred to the next phase. Written submissions and Telegram receipts are self-reported evidence for manual review. Shared text is readable on the server and by the two members; there is no end-to-end encryption. Same-origin scripts or a compromised browser/server can expose data. The public repository contains the supplied agreement, not live records or media.
+
+## AI routine drafting
+
+In Routines, the Master can expand **Draft a routine with AI**, describe the desired schedule and generate a draft that opens in the ordinary editor. It stays unsaved until **Save**. The Sub can request routine changes through the existing flow. The server checks membership, role and pause before calling the provider, validates the result, and checks pause again before returning it. No AI task verification or automatic consequences are introduced.
+
+Configure server environment variables `OPENAI_API_KEY` and `OPENAI_ROUTINE_MODEL` using a Responses API model that supports Structured Outputs. No key goes in the browser or a `VITE_` variable. Only the description explicitly submitted is sent to OpenAI; names, agreement, messages and media are not attached. Requests use `store: false`; this does not assert zero provider retention. Missing setup or provider failures show an error and preserve the manual workflow. Provider tests use mocks; no paid live provider call has been made in this build. Reference: https://developers.openai.com/api/docs/guides/structured-outputs.
+
+## Telegram proof receipts
+
+Proof review has a separate expandable **Telegram proof collection** panel. Optional media is shared in the participants' agreed Telegram conversation; this build supports confirmations through a private bot, rather than ingesting arbitrary group chat messages. Each participant chooses the same routine and opens their own personal bot link from the app. These are private bearer links, consumed once and valid only for the pending daily receipt. Keep them private. Distinct Telegram accounts are required within a space. Linked accounts cannot be replaced through a new link; account recovery is future work.
+
+The bot gives a record ID and accepts `/yes RECORD`, `/no RECORD` and `/status RECORD`. Media optionally sent to the bot can have `/proof RECORD` as its caption. The server records only whether such an input arrived, never Telegram file IDs, filenames, download URLs or file bytes. It does not forward media to the other participant: use the agreed Telegram conversation for sharing. A text alternative remains available. Telegram has its own privacy and retention rules; moving media there does not prevent screenshots, downloads or external photographs.
+
+Only both yes confirmations create **Proof submitted successfully** in the app, as a submission awaiting the existing human review. One yes, a no, an unlinked sender, stale instructions, an expired daily record or a paused space cannot submit it. The same consent, daily opt-in and instruction acknowledgement rules apply. Neutral challenge routines retain their written prompt flow. Duplicate webhook deliveries cannot create another submission. The app polls receipts as well as task state, so a first confirmation becomes visible without changing the task.
+
+Configure `TELEGRAM_BOT_USERNAME` without `@` and a random `TELEGRAM_WEBHOOK_SECRET` of at least 32 characters in the Node host's environment. Register the bot's HTTPS webhook as `https://YOUR_HOST/api/space/telegram` using Telegram `setWebhook`, passing the **same** `secret_token` and `allowed_updates: ["message"]`. Keep the bot token in the operator's secret manager; this app uses Telegram's response-to-webhook mechanism and does not need the bot token at runtime. Only authenticated private-chat message updates are processed. Keep the secret header and body out of proxy logs. See https://core.telegram.org/bots/api#setwebhook and https://core.telegram.org/bots/api#making-requests-when-getting-updates. Automated tests simulate authenticated Telegram deliveries; a real bot and public HTTPS host have not been connected.
+
+## Existing data and parallel environments
+
+The first start of this version automatically migrates the membership table, retaining session hashes, roles and all space records. Before migrating a persistent legacy database it writes a consistent SQLite backup alongside it, with restricted permissions. The migration is transactional and does not reset or seed live spaces. Keep enough disk space for that backup. Stop the old server before starting the new build; do not run the old single-space version against the migrated database. To roll back, restore the backup with the old version while the server is stopped.
+
+Use separate `NOCTURNE_DB_PATH` locations and separate AI/Telegram configuration for development, UAT and production. Never point parallel developers or CI at a live database. This is still a single persistent Node host with serialized SQLite writes, not a horizontally scaled deployment. Isolation tests are not a capacity benchmark. Integrate parallel changes serially through UAT and test the exact candidate before promotion.
 
 ## Checks and release
 

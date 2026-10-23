@@ -10,6 +10,7 @@ import { createAgreement, upgradeAgreement } from "./agreement-document";
 import { dateKey } from "./logic";
 import type { AppState, Role } from "./types";
 import type { SpaceSnapshot } from "./space-protocol";
+import { TelegramProofStore, telegramConfigured } from "./telegram-proof.server";
 
 const id = z.string().min(1).max(100);
 const commandSchema = z.discriminatedUnion("type", [
@@ -133,6 +134,7 @@ export class SpaceError extends Error {
 /** One persistent Node host; BEGIN IMMEDIATE serializes join and every state change. */
 export class SpaceRepository {
   private db: DatabaseSync;
+  private telegram: TelegramProofStore;
   constructor(
     path: string,
     private now: () => Date = () => new Date(),
@@ -145,7 +147,26 @@ export class SpaceRepository {
     if (path !== ":memory:") chmodSync(path, 0o600);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;
       CREATE TABLE IF NOT EXISTS spaces (id TEXT PRIMARY KEY, body TEXT NOT NULL, revision INTEGER NOT NULL, creator_role TEXT NOT NULL, invite TEXT UNIQUE, invite_expires INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS members (session_hash TEXT PRIMARY KEY, space_id TEXT NOT NULL REFERENCES spaces(id), role TEXT NOT NULL, expires INTEGER NOT NULL, UNIQUE(space_id, role));`);
+      CREATE TABLE IF NOT EXISTS members (session_hash TEXT NOT NULL, space_id TEXT NOT NULL REFERENCES spaces(id), role TEXT NOT NULL, expires INTEGER NOT NULL, PRIMARY KEY(session_hash, space_id), UNIQUE(space_id, role));`);
+    const columns = this.db.prepare("PRAGMA table_info(members)").all() as {
+      name: string;
+      pk: number;
+    }[];
+    if (!columns.some((c) => c.name === "space_id" && c.pk > 0)) {
+      // VACUUM includes WAL contents. Never copy a live SQLite main file alone.
+      if (path !== ":memory:") {
+        const backup = `${path}.before-multiple-spaces-${randomUUID()}.sqlite`;
+        this.db.prepare("VACUUM INTO ?").run(backup);
+        chmodSync(backup, 0o600);
+      }
+      this.transaction(() => {
+        this.db.exec(`ALTER TABLE members RENAME TO members_legacy;
+          CREATE TABLE members (session_hash TEXT NOT NULL, space_id TEXT NOT NULL REFERENCES spaces(id), role TEXT NOT NULL, expires INTEGER NOT NULL, PRIMARY KEY(session_hash, space_id), UNIQUE(space_id, role));
+          INSERT INTO members SELECT session_hash, space_id, role, expires FROM members_legacy;
+          DROP TABLE members_legacy;`);
+      });
+    }
+    this.telegram = new TelegramProofStore(this.db);
   }
   close() {
     this.db.close();
@@ -161,10 +182,20 @@ export class SpaceRepository {
       throw error;
     }
   }
-  private member(session: string): Member {
-    const found = this.db
-      .prepare("SELECT space_id, role FROM members WHERE session_hash=? AND expires>?")
-      .get(hash(session), this.now().valueOf()) as Member | undefined;
+  private memberships(session: string): Member[] {
+    return this.db
+      .prepare(
+        "SELECT space_id, role FROM members WHERE session_hash=? AND expires>? ORDER BY rowid",
+      )
+      .all(hash(session), this.now().valueOf()) as Member[];
+  }
+  private member(session: string, spaceId?: string, writing = false): Member {
+    const memberships = this.memberships(session);
+    if (writing && !spaceId && memberships.length > 1)
+      throw new SpaceError(400, "Select the space before making changes. Refresh this page.");
+    const found = spaceId ? memberships.find((m) => m.space_id === spaceId) : memberships[0];
+    if (!found && memberships.length && spaceId)
+      throw new SpaceError(403, "This space is not part of your memberships.");
     if (!found)
       throw new SpaceError(
         401,
@@ -180,9 +211,23 @@ export class SpaceRepository {
   private state(row: Row): AppState {
     return bodySchema.parse(JSON.parse(row.body)) as AppState;
   }
-  private snapshot(row: Row, role: Role): SpaceSnapshot {
+  private snapshot(row: Row, role: Role, session: string): SpaceSnapshot {
     const current = this.state(row);
     return {
+      telegram: {
+        configured: telegramConfigured(),
+        proofs: this.telegram.list(row.id, this.now()),
+      },
+      spaces: this.memberships(session).map((member) => {
+        const state = this.state(this.row(member.space_id));
+        return {
+          id: member.space_id,
+          role: member.role,
+          partnerName: state.names[member.role === "dom" ? "sub" : "dom"],
+          paired: state.space.paired,
+          paused: state.pause.active,
+        };
+      }),
       state: {
         ...current,
         myRole: role,
@@ -204,20 +249,12 @@ export class SpaceRepository {
       .prepare("UPDATE spaces SET body=?, revision=revision+1 WHERE id=?")
       .run(JSON.stringify(validated), row.id);
   }
-  private available(session: string) {
-    if (
-      session &&
-      this.db
-        .prepare("SELECT 1 FROM members WHERE session_hash=? AND expires>?")
-        .get(hash(session), this.now().valueOf())
-    )
-      throw new SpaceError(
-        409,
-        "This browser already belongs to a space. Open it, or use another browser profile for testing.",
-      );
-  }
-  private addMember(spaceId: string, role: Role) {
-    const token = secret();
+  private addMember(spaceId: string, role: Role, session: string) {
+    const token = this.memberships(session).length ? session : secret();
+    // Keep one anonymous identity across its private relationships.
+    this.db
+      .prepare("UPDATE members SET expires=? WHERE session_hash=?")
+      .run(this.now().valueOf() + SESSION_SECONDS * 1000, hash(token));
     this.db
       .prepare("INSERT INTO members VALUES (?, ?, ?, ?)")
       .run(hash(token), spaceId, role, this.now().valueOf() + SESSION_SECONDS * 1000);
@@ -225,7 +262,6 @@ export class SpaceRepository {
   }
   create(name: string, role: Role, session = "", timeZone = "UTC") {
     return this.transaction(() => {
-      this.available(session);
       const initial = createInitialState(),
         spaceId = randomUUID(),
         invite = secret();
@@ -250,8 +286,8 @@ export class SpaceRepository {
       this.db
         .prepare("INSERT INTO spaces VALUES (?, ?, 1, ?, ?, ?)")
         .run(spaceId, JSON.stringify(state), role, invite, this.now().valueOf() + WEEK);
-      const token = this.addMember(spaceId, role);
-      return { token, snapshot: this.snapshot(this.row(spaceId), role) };
+      const token = this.addMember(spaceId, role, session);
+      return { token, snapshot: this.snapshot(this.row(spaceId), role, token) };
     });
   }
   preview(invite: string) {
@@ -270,9 +306,13 @@ export class SpaceRepository {
   }
   join(invite: string, name: string, session = "") {
     return this.transaction(() => {
-      this.available(session);
       this.preview(invite);
       const row = this.db.prepare("SELECT * FROM spaces WHERE invite=?").get(invite) as Row;
+      if (this.memberships(session).some((m) => m.space_id === row.id))
+        throw new SpaceError(
+          409,
+          "You already belong to this space. A different person must join.",
+        );
       const state = this.state(row),
         role = row.creator_role === "dom" ? "sub" : "dom";
       if (state.pause.active)
@@ -293,24 +333,55 @@ export class SpaceRepository {
       };
       this.save(row, next);
       this.db.prepare("UPDATE spaces SET invite=NULL WHERE id=?").run(row.id);
-      const token = this.addMember(row.id, role);
-      return { token, snapshot: this.snapshot(this.row(row.id), role) };
+      const token = this.addMember(row.id, role, session);
+      return { token, snapshot: this.snapshot(this.row(row.id), role, token) };
     });
   }
-  read(session: string) {
-    const member = this.member(session);
-    return this.snapshot(this.row(member.space_id), member.role);
+  read(session: string, spaceId?: string) {
+    const member = this.member(session, spaceId);
+    return this.snapshot(this.row(member.space_id), member.role, session);
+  }
+  openTelegram(session: string, spaceId: string, routineId: string) {
+    return this.transaction(() => {
+      const member = this.member(session, spaceId, true);
+      try {
+        return this.telegram.open(
+          this.state(this.row(spaceId)),
+          member.role,
+          this.now(),
+        )(routineId);
+      } catch (error) {
+        throw new SpaceError(
+          400,
+          error instanceof Error ? error.message : "Cannot open collection.",
+        );
+      }
+    });
+  }
+  telegramUpdate(id: number, userId: string, text: string, media: boolean) {
+    return this.transaction(() =>
+      this.telegram.process(
+        id,
+        userId,
+        text,
+        media,
+        this.now(),
+        (spaceId) => this.state(this.row(spaceId)),
+        (spaceId, state) => this.save(this.row(spaceId), state),
+      ),
+    );
   }
   change(
     session: string,
     revision: number,
     operation: { command: unknown } | { name: string } | { rotate: true },
+    spaceId?: string,
   ) {
     return this.transaction(() => {
-      const member = this.member(session),
+      const member = this.member(session, spaceId, true),
         row = this.row(member.space_id),
         state = this.state(row);
-      const snapshot = this.snapshot(row, member.role);
+      const snapshot = this.snapshot(row, member.role, session);
       const command =
         "command" in operation ? (commandSchema.parse(operation.command) as Command) : null;
       // A safety stop always wins even if this browser has an old revision.
@@ -359,7 +430,7 @@ export class SpaceRepository {
         else throw new SpaceError(400, "Unknown operation.");
       }
       this.save(row, next);
-      return this.snapshot(this.row(row.id), member.role);
+      return this.snapshot(this.row(row.id), member.role, session);
     });
   }
 }

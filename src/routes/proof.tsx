@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 import type { Submission } from "@/lib/nocturne/types";
+import { TelegramProof } from "@/components/nocturne/TelegramProof";
 
 export const Route = createFileRoute("/proof")({
   head: () => ({ meta: [{ title: "Proof review — Nocturne" }] }),
@@ -56,16 +57,17 @@ function ProofPage() {
           <ReviewCard key={x.id} entry={x} />
         ))}
       </ul>
+      <TelegramProof />
       <div className="mt-9 border-t pt-5">
         <h2 className="text-xl">Media & live verification</h2>
         <p className="mt-2 text-xs leading-6 text-muted-foreground">
-          Not available in this build. No camera opens, no media is uploaded, and no biometric or
-          liveness result is generated. Neutral text prompts are replay-deterrence aids only; they
-          do not establish who responded or whether a task was performed. Browser screenshots and
-          external photographs cannot be prevented.
+          Camera work is planned for the next phase. No camera opens and no biometric or liveness
+          result is generated. Neutral text prompts are replay-deterrence aids only; they do not
+          establish who responded or whether a task was performed. Browser screenshots and external
+          photographs cannot be prevented.
         </p>
         <Button variant="outline" className="mt-3" disabled>
-          Camera verification · unsupported
+          Camera · next phase
         </Button>
       </div>
     </AppShell>

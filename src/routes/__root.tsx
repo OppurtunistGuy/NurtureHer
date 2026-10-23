@@ -11,6 +11,8 @@ import {
 import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 
+import { useNocturne } from "@/lib/nocturne/store";
+
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
@@ -105,9 +107,10 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const state = useNocturne();
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      <Outlet key={state.space.id ?? "demo"} />
       <Toaster position="top-center" theme="dark" />
     </QueryClientProvider>
   );

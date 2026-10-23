@@ -1,6 +1,27 @@
 import type { AppState } from "./types";
 
+export interface SpaceSummary {
+  id: string;
+  role: "dom" | "sub";
+  partnerName: string;
+  paired: boolean;
+  paused: boolean;
+}
+
 export interface SpaceSnapshot {
+  telegram: {
+    configured: boolean;
+    proofs: {
+      id: string;
+      routineId: string;
+      date: string;
+      status: string;
+      masterConfirmed: boolean;
+      subConfirmed: boolean;
+      mediaReceived: boolean;
+    }[];
+  };
+  spaces: SpaceSummary[];
   state: AppState;
   revision: number;
   createdByMe: boolean;
