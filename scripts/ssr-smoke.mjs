@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
+import { stripVTControlCharacters } from "node:util";
 
 const server = spawn(
   process.execPath,
@@ -17,7 +18,7 @@ try {
   await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Server did not start: ${output}`)), 25000);
     const poll = setInterval(() => {
-      if (output.includes("127.0.0.1:4178")) {
+      if (stripVTControlCharacters(output).includes("127.0.0.1:4178")) {
         clearInterval(poll);
         clearTimeout(timer);
         resolve();
