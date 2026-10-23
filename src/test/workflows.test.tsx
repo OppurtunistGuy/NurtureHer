@@ -99,9 +99,7 @@ describe("rendered app workflow", () => {
     expect(within(routine).getByText("Awaiting review")).toBeInTheDocument();
     await go("/proof");
     expect(screen.queryByRole("button", { name: "Accept check-in" })).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Camera verification · unsupported" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Camera · next phase" })).toBeDisabled();
     await go("/settings");
     await click(screen.getByRole("radio", { name: /Master/ }));
     await go("/proof");

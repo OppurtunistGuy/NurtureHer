@@ -12,7 +12,12 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useNocturne, useSpaceConnection, restoreSharedSpace } from "@/lib/nocturne/store";
+import {
+  useNocturne,
+  useSpaceConnection,
+  restoreSharedSpace,
+  spaceActions,
+} from "@/lib/nocturne/store";
 import { PauseBanner, PauseButton } from "./PauseControl";
 import { useReminders } from "./useReminders";
 import {
@@ -92,6 +97,31 @@ export function AppShell({
             </Link>
           </div>
         </div>
+        {s.space.mode === "shared" && (
+          <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 pb-3">
+            <label htmlFor="active-space" className="sr-only">
+              Active space
+            </label>
+            <select
+              id="active-space"
+              className="native-select min-w-0 flex-1 text-sm"
+              value={s.space.id}
+              disabled={connection.busy}
+              onChange={(e) => void spaceActions.open(e.target.value)}
+            >
+              {connection.spaces.map((space) => (
+                <option key={space.id} value={space.id}>
+                  {space.partnerName} · {space.role === "dom" ? "Master" : "Sub"}
+                  {!space.paired ? " · awaiting partner" : ""}
+                  {space.paused ? " · paused" : ""}
+                </option>
+              ))}
+            </select>
+            <Link to="/" hash="setup" className="shrink-0 text-xs text-gold underline">
+              Add a space
+            </Link>
+          </div>
+        )}
         <nav
           className="mx-auto hidden max-w-3xl items-center justify-between gap-1 overflow-x-auto px-3 pb-3 md:flex"
           aria-label="Main"

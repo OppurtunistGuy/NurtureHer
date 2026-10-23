@@ -11,6 +11,7 @@ import { dateKey, recurrenceLabel, uid } from "@/lib/nocturne/logic";
 import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 import type { Routine } from "@/lib/nocturne/types";
 import { RequestDialog } from "@/components/nocturne/RequestDialog";
+import { RoutineDraft } from "@/components/nocturne/RoutineDraft";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -67,6 +68,7 @@ function RoutinesPage() {
             </p>
             {s.viewRole === "dom" && <Button onClick={() => setEdit(blank())}>New routine</Button>}
           </div>
+          {s.viewRole === "dom" && <RoutineDraft key={s.space.id ?? "demo"} onDraft={setEdit} />}
           <ul className="mt-6 divide-y divide-border">
             {s.routines.map((r) => (
               <li key={r.id} className="flex items-center justify-between gap-3 py-3">

@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, readdirSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { handleSpaceRequest } from "./space-api.server";
@@ -21,17 +22,20 @@ afterEach(() => {
 class BrowserSession {
   cookie = "";
   snapshot!: SpaceSnapshot;
-  async request(body?: Record<string, unknown>) {
+  async request(body?: Record<string, unknown>, selected = this.snapshot?.state.space.id) {
     const response = await handleSpaceRequest(
-      new Request("https://nocturne.test/api/space", {
-        method: body ? "POST" : "GET",
-        headers: {
-          origin: "https://nocturne.test",
-          "content-type": "application/json",
-          cookie: this.cookie,
+      new Request(
+        `https://nocturne.test/api/space${!body && selected ? `?space=${selected}` : ""}`,
+        {
+          method: body ? "POST" : "GET",
+          headers: {
+            origin: "https://nocturne.test",
+            "content-type": "application/json",
+            cookie: this.cookie,
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
         },
-        ...(body ? { body: JSON.stringify(body) } : {}),
-      }),
+      ),
       db,
     );
     const value = await response.json();
@@ -45,7 +49,12 @@ class BrowserSession {
     return this.request({ op: "create", name, role, adult: true });
   }
   command(command: Record<string, unknown>, revision = this.snapshot.revision) {
-    return this.request({ op: "command", revision, command });
+    return this.request({
+      op: "command",
+      revision,
+      spaceId: this.snapshot.state.space.id,
+      command,
+    });
   }
 }
 async function pair(creatorRole: Role = "dom") {
@@ -175,12 +184,15 @@ describe("real shared-space requests with independent browser sessions", () => {
         .response.status,
     ).toBe(200);
   });
-  it("keeps an existing member in their space rather than overwriting it", async () => {
+  it("adds a relationship without overwriting the existing space or cookie", async () => {
     const creator = new BrowserSession();
     await creator.create();
     const before = creator.snapshot.state.space.id;
-    expect((await creator.create("Other")).response.status).toBe(409);
-    await creator.request();
+    const cookie = creator.cookie;
+    expect((await creator.create("Other")).response.status).toBe(201);
+    expect(creator.cookie).toBe(cookie);
+    expect(creator.snapshot.spaces).toHaveLength(2);
+    await creator.request(undefined, before);
     expect(creator.snapshot.state.space.id).toBe(before);
   });
   it("rejects expired sessions without changing saved records", async () => {
@@ -324,6 +336,178 @@ describe("real shared-space requests with independent browser sessions", () => {
 });
 
 describe("request and invitation boundaries", () => {
+  it("keeps multiple Masters and Subs private and derives authority separately in each space", async () => {
+    const { creator, partner } = await pair();
+    const first = creator.snapshot.state.space.id!;
+    await creator.command({ type: "routine.save", routine });
+    await creator.command({ type: "message", text: "Only first pair", channel: "notes" });
+    await creator.create("Maya second", "dom");
+    const second = creator.snapshot.state.space.id!;
+    const third = new BrowserSession();
+    await third.request({
+      op: "join",
+      name: "Third",
+      token: creator.snapshot.invite!.token,
+      adult: true,
+    });
+    await creator.request();
+    await creator.command({
+      type: "routine.save",
+      routine: { ...routine, title: "Second relationship" },
+    });
+    expect(creator.snapshot.state.messages).toHaveLength(0);
+    expect(third.snapshot.spaces).toHaveLength(1);
+    await partner.request();
+    expect(partner.snapshot.spaces).toHaveLength(1);
+    expect(partner.snapshot.state.routines[0]!.title).toBe(routine.title);
+    expect((await partner.request(undefined, second)).response.status).toBe(403);
+    const fourth = new BrowserSession();
+    await fourth.create("Other Master");
+    const other = fourth.snapshot.state.space.id!;
+    await creator.request({
+      op: "join",
+      token: fourth.snapshot.invite!.token,
+      name: "Maya sub",
+      adult: true,
+    });
+    expect(creator.snapshot.state.myRole).toBe("sub");
+    expect(creator.snapshot.spaces).toHaveLength(3);
+    expect((await creator.command({ type: "routine.save", routine })).response.status).toBe(400);
+    await creator.request(undefined, first);
+    expect(creator.snapshot.state.myRole).toBe("dom");
+    expect(creator.snapshot.state.messages[0]!.text).toBe("Only first pair");
+    await creator.command({ type: "pause", reason: "Check in" });
+    await creator.request(undefined, second);
+    expect(creator.snapshot.state.pause.active).toBe(false);
+    expect(
+      (
+        await creator.command({
+          type: "message",
+          text: "Second pair still active",
+          channel: "notes",
+        })
+      ).response.status,
+    ).toBe(200);
+    await creator.request(undefined, first);
+    expect(creator.snapshot.state.pause.active).toBe(true);
+    expect(creator.snapshot.state.messages).toHaveLength(1);
+    expect(
+      (
+        await creator.request({
+          op: "command",
+          revision: creator.snapshot.revision,
+          command: { type: "message", text: "Ambiguous", channel: "notes" },
+        })
+      ).response.status,
+    ).toBe(400);
+    await fourth.request(undefined, other);
+    expect(fourth.snapshot.state.pause.active).toBe(false);
+    expect(fourth.snapshot.spaces).toHaveLength(1);
+  });
+  it("allows a Sub to join two Masters without sharing agreements or tasks", async () => {
+    const first = new BrowserSession(),
+      second = new BrowserSession(),
+      sub = new BrowserSession();
+    await first.create("First");
+    const firstId = first.snapshot.state.space.id!;
+    await sub.request({
+      op: "join",
+      token: first.snapshot.invite!.token,
+      name: "Sub",
+      adult: true,
+    });
+    await sub.command({ type: "agreement.ack" });
+    await second.create("Second");
+    await sub.request({
+      op: "join",
+      token: second.snapshot.invite!.token,
+      name: "Sub alias",
+      adult: true,
+    });
+    expect(sub.snapshot.spaces).toHaveLength(2);
+    expect(sub.snapshot.spaces.every((s) => s.role === "sub")).toBe(true);
+    expect(sub.snapshot.state.agreement.ack.sub).toBeNull();
+    await sub.request(undefined, firstId);
+    expect(sub.snapshot.state.agreement.ack.sub).not.toBeNull();
+    expect(sub.snapshot.state.names.sub).toBe("Sub");
+  });
+  it("cannot join your own invitation or use a forged space ID", async () => {
+    const creator = new BrowserSession();
+    await creator.create();
+    const token = creator.snapshot.invite!.token;
+    expect(
+      (await creator.request({ op: "join", token, name: "Same person", adult: true })).response
+        .status,
+    ).toBe(409);
+    const stranger = new BrowserSession();
+    await stranger.create();
+    expect(
+      (
+        await creator.request({
+          op: "profile",
+          spaceId: stranger.snapshot.state.space.id,
+          revision: 1,
+          name: "Intrusion",
+        })
+      ).response.status,
+    ).toBe(403);
+    expect(
+      (
+        await creator.request({
+          op: "profile",
+          spaceId: "not-an-id",
+          revision: 1,
+          name: "Intrusion",
+        })
+      ).response.status,
+    ).toBe(400);
+  });
+  it("migrates legacy membership records with a consistent backup and preserves both sessions and data", async () => {
+    const { creator, partner } = await pair();
+    await creator.command({ type: "message", text: "Existing private note", channel: "notes" });
+    const before = creator.snapshot.state;
+    db.close();
+    const legacy = new DatabaseSync(join(directory, "spaces.sqlite"));
+    legacy.exec(`ALTER TABLE members RENAME TO current_members;
+      CREATE TABLE members (session_hash TEXT PRIMARY KEY,space_id TEXT NOT NULL REFERENCES spaces(id),role TEXT NOT NULL,expires INTEGER NOT NULL,UNIQUE(space_id,role));
+      INSERT INTO members SELECT * FROM current_members; DROP TABLE current_members;`);
+    legacy.close();
+    db = new SpaceRepository(join(directory, "spaces.sqlite"), () => clock);
+    await creator.request();
+    await partner.request();
+    expect(creator.snapshot.state).toEqual(before);
+    expect(partner.snapshot.state.messages[0]!.text).toBe("Existing private note");
+    const backups = readdirSync(directory).filter((f) => f.includes("before-multiple-spaces"));
+    expect(backups).toHaveLength(1);
+    const backup = new DatabaseSync(join(directory, backups[0]!), { readOnly: true });
+    expect(
+      (backup.prepare("SELECT COUNT(*) AS count FROM members").get() as { count: number }).count,
+    ).toBe(2);
+    backup.close();
+    await creator.create("Another");
+    expect(creator.snapshot.spaces).toHaveLength(2);
+    db.close();
+    db = new SpaceRepository(join(directory, "spaces.sqlite"), () => clock);
+    expect(readdirSync(directory).filter((f) => f.includes("before-multiple-spaces"))).toHaveLength(
+      1,
+    );
+  });
+  it("authorizes AI drafting per space and reports missing setup without changing any routine", async () => {
+    const { creator, partner } = await pair();
+    const body = {
+      op: "draft",
+      spaceId: creator.snapshot.state.space.id,
+      prompt: "Weekday study check-in",
+    };
+    expect((await partner.request(body)).response.status).toBe(403);
+    expect((await new BrowserSession().request(body)).response.status).toBe(401);
+    const result = await creator.request(body);
+    expect(result.response.status).toBe(503);
+    expect(result.value.error).toContain("AI drafting is not configured");
+    await creator.command({ type: "pause", reason: "Stop" });
+    expect((await creator.request(body)).response.status).toBe(423);
+    expect(creator.snapshot.state.routines).toHaveLength(0);
+  });
   it("rejects unsupported timezones", async () => {
     expect(
       (

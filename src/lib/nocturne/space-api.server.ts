@@ -1,9 +1,12 @@
 import { z } from "zod";
 import { SpaceError, SpaceRepository, SESSION_SECONDS } from "./space-repository.server";
+import { RoutineDraftError } from "./routine-drafting.server";
+import { timingSafeEqual } from "node:crypto";
 
 const name = z.string().trim().min(1, "Enter your name.").max(40),
   token = z.string().regex(/^[a-f0-9]{64}$/),
-  revision = z.number().int().min(1);
+  revision = z.number().int().min(1),
+  spaceId = z.string().uuid().optional();
 const timeZone = z
   .string()
   .max(80)
@@ -28,9 +31,23 @@ const requestSchema = z.discriminatedUnion("op", [
     .strict(),
   z.object({ op: z.literal("preview"), token }).strict(),
   z.object({ op: z.literal("join"), name, token, adult: z.literal(true) }).strict(),
-  z.object({ op: z.literal("command"), revision, command: z.unknown() }).strict(),
-  z.object({ op: z.literal("profile"), revision, name }).strict(),
-  z.object({ op: z.literal("rotate"), revision }).strict(),
+  z.object({ op: z.literal("command"), spaceId, revision, command: z.unknown() }).strict(),
+  z.object({ op: z.literal("profile"), spaceId, revision, name }).strict(),
+  z.object({ op: z.literal("rotate"), spaceId, revision }).strict(),
+  z
+    .object({
+      op: z.literal("telegram.open"),
+      spaceId: z.string().uuid(),
+      routineId: z.string().min(1).max(100),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("draft"),
+      spaceId: z.string().uuid(),
+      prompt: z.string().trim().min(1).max(2000),
+    })
+    .strict(),
 ]);
 const COOKIE = "nocturne_member";
 let repository: SpaceRepository | undefined;
@@ -89,8 +106,28 @@ export async function handleSpaceRequest(
     if (request.method === "POST" && request.headers.get("origin") !== new URL(request.url).origin)
       throw new SpaceError(403, "Open this page on the same site before making changes.");
     const db = suppliedRepository ?? getRepository();
-    if (request.method === "GET") return json(db.read(session));
+    if (request.method === "GET")
+      return json(
+        db.read(
+          session,
+          spaceId.parse(new URL(request.url).searchParams.get("space") ?? undefined),
+        ),
+      );
     const input = await readBody(request);
+    if (input.op === "telegram.open")
+      return json(db.openTelegram(session, input.spaceId, input.routineId));
+    if (input.op === "draft") {
+      const snapshot = db.read(session, input.spaceId);
+      if (snapshot.state.myRole !== "dom")
+        throw new SpaceError(403, "Only the Master can draft assigned routines.");
+      if (snapshot.state.pause.active)
+        throw new SpaceError(423, "Paused: routine drafting is locked.");
+      const { draftRoutine } = await import("./routine-drafting.server");
+      const routine = await draftRoutine(input.prompt);
+      if (db.read(session, input.spaceId).state.pause.active)
+        throw new SpaceError(423, "Paused: routine drafting is locked.");
+      return json({ routine });
+    }
     if (input.op === "preview") return json(db.preview(input.token));
     if (input.op === "create" || input.op === "join") {
       const result =
@@ -112,9 +149,11 @@ export async function handleSpaceRequest(
           : input.op === "profile"
             ? { name: input.name }
             : { rotate: true },
+        input.spaceId,
       ),
     );
   } catch (error) {
+    if (error instanceof RoutineDraftError) return json({ error: error.message }, error.status);
     if (error instanceof SpaceError)
       return json(
         { error: error.message, ...(error.snapshot ? { snapshot: error.snapshot } : {}) },
@@ -130,5 +169,83 @@ export async function handleSpaceRequest(
       { error: "Shared storage is unavailable. Try again; your space has not been replaced." },
       503,
     );
+  }
+}
+
+/** Telegram sends authenticated updates here; media payloads are never persisted. */
+export async function handleTelegramRequest(
+  request: Request,
+  suppliedRepository?: SpaceRepository,
+) {
+  const json = (data: unknown, status = 200) =>
+    new Response(JSON.stringify(data), {
+      status,
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  const secret = process.env["TELEGRAM_WEBHOOK_SECRET"] ?? "",
+    supplied = request.headers.get("x-telegram-bot-api-secret-token") ?? "";
+  if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
+  if (secret.length < 32) return json({ error: "Telegram is not configured." }, 503);
+  if (
+    Buffer.byteLength(secret) !== Buffer.byteLength(supplied) ||
+    !timingSafeEqual(Buffer.from(secret), Buffer.from(supplied))
+  )
+    return json({ error: "Unauthorized." }, 403);
+  try {
+    const reader = request.body?.getReader();
+    if (!reader) return json({ error: "Missing update." }, 400);
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      size += next.value.length;
+      if (size > 65536) {
+        await reader.cancel();
+        return json({ error: "Update too large." }, 413);
+      }
+      chunks.push(next.value);
+    }
+    const update = z
+      .object({
+        update_id: z.number().int().nonnegative(),
+        message: z
+          .object({
+            from: z.object({ id: z.number().int().positive(), is_bot: z.boolean().optional() }),
+            chat: z.object({ id: z.number().int(), type: z.string() }),
+            text: z.string().max(4096).optional(),
+            caption: z.string().max(4096).optional(),
+            photo: z.unknown().optional(),
+            video: z.unknown().optional(),
+            document: z.unknown().optional(),
+          })
+          .optional(),
+      })
+      .parse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+    const message = update.message;
+    if (
+      !message ||
+      message.from.is_bot ||
+      message.chat.type !== "private" ||
+      message.chat.id !== message.from.id
+    )
+      return json({ ok: true });
+    let text: string;
+    try {
+      text = (suppliedRepository ?? getRepository()).telegramUpdate(
+        update.update_id,
+        String(message.from.id),
+        message.text || message.caption || "",
+        !!(message.photo || message.video || message.document),
+      );
+    } catch (error) {
+      if (error instanceof Error && "code" in error)
+        return json({ error: "Storage unavailable; retry this update." }, 503);
+      text =
+        "This record cannot be updated. Check the app for consent, preparation and current task status. Nothing was submitted.";
+    }
+    return json({ method: "sendMessage", chat_id: message.chat.id, text, protect_content: true });
+  } catch {
+    return json({ error: "Invalid update." }, 400);
   }
 }

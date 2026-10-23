@@ -17,6 +17,8 @@ const server = spawn(process.execPath, [".output/server/index.mjs"], {
     HOST: "127.0.0.1",
     PORT: String(port),
     NOCTURNE_DB_PATH: join(directory, "spaces.sqlite"),
+    TELEGRAM_BOT_USERNAME: "nocturne_browser_test_bot",
+    TELEGRAM_WEBHOOK_SECRET: "browser-test-secret-with-at-least-32-characters",
   },
   stdio: ["ignore", "pipe", "pipe"],
 });
@@ -212,6 +214,182 @@ try {
   await failurePage.getByRole("button", { name: "Create my space", exact: true }).click();
   await failurePage.getByRole("heading", { name: "Your space is ready", exact: true }).waitFor();
   console.log("PASS browser: a failed create preserves the form and retries without false success");
+  // Mock only the external AI response; exercise review/edit/save in the real browser.
+  await owner.goto(`${origin}/routines`);
+  await owner.getByText("Draft a routine with AI", { exact: true }).click();
+  await owner
+    .getByLabel("Describe the routine", { exact: true })
+    .fill("A short daily evening reflection");
+  await owner.route("**/api/space", async (route) => {
+    if (route.request().method() === "POST" && route.request().postDataJSON()?.op === "draft")
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          routine: {
+            id: "browser-ai-draft",
+            title: "Draft evening reflection",
+            instructions: "Write one sentence.",
+            windowStart: "18:00",
+            windowEnd: "20:00",
+            recurrence: { kind: "daily" },
+            reminderMinutes: 10,
+            enabled: true,
+            requiresAck: false,
+            optInDaily: false,
+            proof: "text",
+          },
+        }),
+      });
+    else await route.continue();
+  });
+  await owner.getByRole("button", { name: "Generate editable draft", exact: true }).click();
+  await owner.getByLabel("Title", { exact: true }).waitFor();
+  assert.equal(
+    await owner.getByLabel("Title", { exact: true }).inputValue(),
+    "Draft evening reflection",
+  );
+  await guest.goto(`${origin}/routines`);
+  assert.equal(
+    await guest.getByText("Draft evening reflection", { exact: true }).count(),
+    0,
+    "AI draft must remain unsaved",
+  );
+  await owner.getByLabel("Title", { exact: true }).fill("Telegram browser routine");
+  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await owner.getByText("Telegram browser routine", { exact: true }).waitFor();
+  await owner.unroute("**/api/space");
+  console.log("PASS browser: mocked AI draft stays editable and unsaved until explicit Save");
+  const links = [];
+  for (const page of [owner, guest]) {
+    await page.goto(`${origin}/proof`);
+    await page.getByText("Telegram proof collection", { exact: true }).click();
+    await page
+      .getByLabel("Routine for this receipt", { exact: true })
+      .selectOption({ label: "Telegram browser routine" });
+    await page.getByRole("button", { name: "Get my Telegram link", exact: true }).click();
+    const anchor = page.getByRole("link", { name: "Open my private bot link", exact: true });
+    await anchor.waitFor();
+    links.push(await anchor.getAttribute("href"));
+  }
+  const telegram = async (user, text, id) => {
+    const response = await fetch(`${origin}/api/space/telegram`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-telegram-bot-api-secret-token": "browser-test-secret-with-at-least-32-characters",
+      },
+      body: JSON.stringify({
+        update_id: id,
+        message: { from: { id: user }, chat: { id: user, type: "private" }, text },
+      }),
+    });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const masterStart = await telegram(
+    101,
+    `/start ${new URL(links[0]).searchParams.get("start")}`,
+    1,
+  );
+  await telegram(202, `/start ${new URL(links[1]).searchParams.get("start")}`, 2);
+  const ticket = /Record ([a-f0-9-]{36})/.exec(masterStart.text)[1];
+  assert.ok((await telegram(101, `/yes ${ticket}`, 3)).text.includes("Waiting"));
+  assert.ok(
+    (await telegram(202, `/yes ${ticket}`, 4)).text.includes("Proof submitted successfully"),
+  );
+  await owner
+    .getByText("Proof submitted successfully · Master yes · Sub yes", { exact: true })
+    .waitFor();
+  await guest
+    .getByText("Proof submitted successfully · Master yes · Sub yes", { exact: true })
+    .waitFor();
+  console.log(
+    "PASS browser: authenticated test Telegram updates synchronize a receipt after both confirmations",
+  );
+  const firstId = await owner.getByLabel("Active space", { exact: true }).inputValue();
+  await owner.getByRole("link", { name: "Add a space", exact: true }).click();
+  await owner.getByLabel("Your name", { exact: true }).fill("Demo Maya Second");
+  await owner.getByRole("checkbox").check();
+  await owner.getByRole("button", { name: "Create my space", exact: true }).click();
+  await owner.getByRole("heading", { name: "Your space is ready", exact: true }).waitFor();
+  const secondInvitation = await owner
+    .getByLabel("Share this invitation", { exact: true })
+    .inputValue();
+  const secondContext = await browser.newContext();
+  const secondPartner = await secondContext.newPage();
+  secondPartner.on("pageerror", (error) => errors.push(error.message));
+  await secondPartner.goto(secondInvitation);
+  await secondPartner.getByLabel("Your name", { exact: true }).fill("Demo Second Sub");
+  await secondPartner.getByRole("checkbox").check();
+  await secondPartner.getByRole("button", { name: "Join space", exact: true }).click();
+  await secondPartner.getByRole("heading", { name: "You're connected", exact: true }).waitFor();
+  const secondId = await owner.getByLabel("Active space", { exact: true }).inputValue();
+  assert.notEqual(firstId, secondId);
+  await owner.goto(`${origin}/routines`);
+  assert.equal(await owner.getByText("Browser test routine", { exact: true }).count(), 0);
+  await owner.getByRole("button", { name: "New routine", exact: true }).click();
+  await owner.getByLabel("Title", { exact: true }).fill("Unsaved other-space draft");
+  await owner.getByLabel("Active space", { exact: true }).selectOption(firstId);
+  await owner.getByText("Browser test routine", { exact: true }).waitFor();
+  assert.equal(
+    await owner.getByLabel("Title", { exact: true }).count(),
+    0,
+    "Space switch must discard the other space's editor",
+  );
+  await owner.reload();
+  await owner.getByText("Browser test routine", { exact: true }).waitFor();
+  assert.equal(await owner.getByLabel("Active space", { exact: true }).inputValue(), firstId);
+  const tab = await ownerContext.newPage();
+  tab.on("pageerror", (error) => errors.push(error.message));
+  await tab.goto(`${origin}/routines`);
+  await tab.getByLabel("Active space", { exact: true }).selectOption(secondId);
+  await tab.getByRole("button", { name: "New routine", exact: true }).waitFor();
+  assert.equal(
+    await owner.getByLabel("Active space", { exact: true }).inputValue(),
+    firstId,
+    "Another tab must not change this tab's selection",
+  );
+  await owner.getByRole("button", { name: "RED — stop now", exact: true }).click();
+  await owner.getByText("Paused. Your space is read-only.", { exact: true }).waitFor();
+  await tab.getByRole("button", { name: "New routine", exact: true }).click();
+  await tab.getByLabel("Title", { exact: true }).fill("Second space unaffected");
+  await tab.getByRole("button", { name: "Save", exact: true }).click();
+  await tab.getByText("Second space unaffected", { exact: true }).waitFor();
+  await owner.getByLabel("Active space", { exact: true }).selectOption(secondId);
+  await owner.getByText("Second space unaffected", { exact: true }).waitFor();
+  assert.equal(
+    await owner.getByText("Paused. Your space is read-only.", { exact: true }).count(),
+    0,
+  );
+  await owner.getByLabel("Active space", { exact: true }).selectOption(firstId);
+  await owner.getByText("Paused. Your space is read-only.", { exact: true }).waitFor();
+  assert.equal(
+    await secondPartner.getByLabel("Active space", { exact: true }).locator("option").count(),
+    1,
+  );
+  console.log(
+    "PASS browser: multiple Subs, per-tab selection, draft reset, reload persistence and isolated pauses",
+  );
+  // The existing Sub joins another Master without leaving the first relationship.
+  await failurePage.goto(`${origin}/settings`);
+  const thirdInvitation = await failurePage
+    .getByLabel("Share this invitation", { exact: true })
+    .inputValue();
+  await guest.goto(thirdInvitation);
+  await guest.getByLabel("Your name", { exact: true }).fill("Demo Aria Other");
+  await guest.getByRole("checkbox").check();
+  await guest.getByRole("button", { name: "Join space", exact: true }).click();
+  await guest.getByRole("heading", { name: "You're connected", exact: true }).waitFor();
+  assert.equal(
+    await guest.getByLabel("Active space", { exact: true }).locator("option").count(),
+    2,
+  );
+  await guest.getByLabel("Active space", { exact: true }).selectOption(firstId);
+  await guest.getByText("Paused. Your space is read-only.", { exact: true }).waitFor();
+  console.log(
+    "PASS browser: a Sub can join multiple Masters and preserve the original relationship",
+  );
   assert.deepEqual(errors, [], `Browser runtime errors: ${errors.join("; ")}`);
 } finally {
   await browser?.close();

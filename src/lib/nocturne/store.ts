@@ -182,6 +182,8 @@ type Connection = {
   revision: number;
   invite: SpaceSnapshot["invite"];
   createdByMe: boolean;
+  spaces: SpaceSnapshot["spaces"];
+  telegram: SpaceSnapshot["telegram"];
 };
 const initialConnection: Connection = {
   status: "checking",
@@ -190,6 +192,8 @@ const initialConnection: Connection = {
   revision: 0,
   invite: null,
   createdByMe: false,
+  spaces: [],
+  telegram: { configured: false, proofs: [] },
 };
 let connection = initialConnection;
 let started = false,
@@ -210,11 +214,18 @@ function connect(snapshot: SpaceSnapshot) {
     state.space.id === snapshot.state.space.id &&
     connection.revision === snapshot.revision &&
     connection.invite?.token === snapshot.invite?.token &&
+    JSON.stringify(connection.spaces) === JSON.stringify(snapshot.spaces) &&
+    JSON.stringify(connection.telegram) === JSON.stringify(snapshot.telegram) &&
     connection.status === "connected" &&
     !connection.error
   )
     return;
   state = snapshot.state;
+  try {
+    sessionStorage.setItem("nocturne.active-space", state.space.id!);
+  } catch {
+    /* per-tab memory still works */
+  }
   connection = {
     ...connection,
     status: "connected",
@@ -222,19 +233,32 @@ function connect(snapshot: SpaceSnapshot) {
     revision: snapshot.revision,
     invite: snapshot.invite,
     createdByMe: snapshot.createdByMe,
+    spaces: snapshot.spaces,
+    telegram: snapshot.telegram,
   };
   emit();
 }
-async function requestSpace(body?: unknown) {
-  const response = await fetch("/api/space", {
-    method: body ? "POST" : "GET",
-    credentials: "same-origin",
-    cache: "no-store",
-    signal: AbortSignal.timeout(15000),
-    ...(body
-      ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
-      : {}),
-  });
+function activeSpace() {
+  if (state.space.mode === "shared") return state.space.id;
+  try {
+    return sessionStorage.getItem("nocturne.active-space") ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+async function requestSpace(body?: unknown, spaceId = activeSpace()) {
+  const response = await fetch(
+    `/api/space${!body && spaceId ? `?space=${encodeURIComponent(spaceId)}` : ""}`,
+    {
+      method: body ? "POST" : "GET",
+      credentials: "same-origin",
+      cache: "no-store",
+      signal: AbortSignal.timeout(15000),
+      ...(body
+        ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
+        : {}),
+    },
+  );
   const data = await response.json();
   return { response, data };
 }
@@ -276,7 +300,12 @@ async function changeSpace(body: Record<string, unknown>): Promise<ActionResult>
   connection = { ...connection, busy: true };
   emit();
   try {
-    const { response, data } = await requestSpace(body);
+    const { response, data } = await requestSpace({
+      ...body,
+      ...(["command", "profile", "rotate"].includes(String(body["op"]))
+        ? { spaceId: state.space.id }
+        : {}),
+    });
     if (!response.ok) {
       if (data.snapshot) connect(data.snapshot as SpaceSnapshot);
       throw new Error(data.error ?? "The change could not be saved. Please retry.");
@@ -301,6 +330,27 @@ export const uiActions = makeActions(async (command: Command): Promise<ActionRes
   return changeSpace({ op: "command", command, revision: connection.revision });
 });
 export const spaceActions = {
+  open: async (spaceId: string): Promise<ActionResult> => {
+    if (connection.busy) return { ok: false, error: "Wait for the current change to finish." };
+    generation++;
+    const selected = generation;
+    connection = { ...connection, busy: true };
+    emit();
+    try {
+      const { response, data } = await requestSpace(undefined, spaceId);
+      if (!response.ok) throw new Error(data.error ?? "Cannot open this space.");
+      if (selected !== generation) return { ok: false, error: "Selection changed." };
+      connect(data as SpaceSnapshot);
+      return { ok: true };
+    } catch (e) {
+      const error = e instanceof Error ? e.message : "Cannot open this space.";
+      toast.error(error);
+      return { ok: false, error };
+    } finally {
+      connection = { ...connection, busy: false };
+      emit();
+    }
+  },
   create: (name: string, role: Role) =>
     changeSpace({
       op: "create",

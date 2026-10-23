@@ -101,13 +101,13 @@ function Onboarding() {
         <p className="my-6 text-center text-sm leading-6 text-muted-foreground">
           Create your space. Share a link. Join each other.
         </p>
-        {s.space.mode === "shared" && mode === "join" && (
+        {s.space.mode === "shared" && (
           <p className="mb-4 rounded-md border p-3 text-sm">
-            You already have a space on this browser.{" "}
+            Each relationship has its own private space.{" "}
             <button className="underline" onClick={() => navigate({ to: "/today" })}>
               Open your space
             </button>
-            . Use a different browser profile to test joining as the other person.
+            . Create or join another below. A different person must redeem your own invitation.
           </p>
         )}
         <div className="mb-6 grid grid-cols-2 gap-2">
