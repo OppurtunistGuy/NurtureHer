@@ -70,14 +70,12 @@ describe("rendered app workflow", () => {
       fireEvent.change(screen.getByLabelText(label), { target: { value } });
     render(<RouterProvider router={router} />);
     await screen.findByRole("heading", { name: "Nocturne Together" });
-    expect(screen.getByRole("button", { name: "I understand — continue" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Create my space" })).toBeDisabled();
+    await click(screen.getByRole("button", { name: "Try alone first" }));
     await click(screen.getByRole("checkbox"));
-    await click(screen.getByRole("button", { name: "I understand — continue" }));
     await click(screen.getByRole("radio", { name: /Master/ }));
     fill("Your name", "Maya");
-    fill("Sub's name (optional)", "Aria");
-    await click(screen.getByRole("button", { name: "Continue" }));
-    await click(screen.getByRole("button", { name: "Enter demo space" }));
+    await click(screen.getByRole("button", { name: "Enter solo demo" }));
     await screen.findByRole("heading", { name: "Good day, Maya" });
 
     await go("/agreements");

@@ -58,6 +58,10 @@ jobs:
         run: npm run test:ssr
       - name: Production build
         run: npm run build
+      - name: Install test browser
+        run: npx playwright install --with-deps chromium
+      - name: Two-browser create and join acceptance
+        run: npm run test:e2e
       - name: Package the tested build
         run: tar -czf nocturne-build.tar.gz .output
       - name: Upload the tested build

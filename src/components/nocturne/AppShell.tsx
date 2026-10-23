@@ -12,7 +12,7 @@ import {
   MoreHorizontal,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useNocturne } from "@/lib/nocturne/store";
+import { useNocturne, useSpaceConnection, restoreSharedSpace } from "@/lib/nocturne/store";
 import { PauseBanner, PauseButton } from "./PauseControl";
 import { useReminders } from "./useReminders";
 import {
@@ -51,13 +51,18 @@ export function AppShell({
   readControls?: ReactNode;
 }) {
   const s = useNocturne(),
+    connection = useSpaceConnection(),
     { pathname } = useLocation();
   useReminders();
   if (!s.onboarded)
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
         <h1 className="text-4xl">Nocturne Together</h1>
-        <p className="text-sm text-muted-foreground">Set up your local demo first.</p>
+        <p className="text-sm text-muted-foreground">
+          {connection.status === "checking"
+            ? "Opening your space…"
+            : "Create a space or join with an invitation."}
+        </p>
         <Link to="/" className="rounded-md bg-primary px-5 py-2.5 text-primary-foreground">
           Begin
         </Link>
@@ -104,12 +109,36 @@ export function AppShell({
         </nav>
         <div className="border-t bg-wine-soft/20">
           <p className="mx-auto max-w-3xl px-4 py-2 text-[0.68rem] text-muted-foreground">
-            <span className="text-gold">Local demo</span> · unencrypted on this browser · no pairing
-            or camera verification · use example data only
+            {s.space.mode === "shared" ? (
+              <>
+                <span className="text-gold">Shared space</span> ·{" "}
+                {connection.busy
+                  ? "Saving…"
+                  : connection.status === "offline"
+                    ? "Connection unavailable"
+                    : s.space.paired
+                      ? "Connected"
+                      : "Waiting for your partner"}{" "}
+                · use example data while testing
+              </>
+            ) : (
+              <>
+                <span className="text-gold">Solo demo</span> · stored on this browser · use example
+                data only
+              </>
+            )}
           </p>
         </div>
       </header>
       <PauseBanner />
+      {s.space.mode === "shared" && connection.error && (
+        <div role="alert" className="mx-auto mt-4 w-full max-w-3xl rounded-md border p-4 text-sm">
+          <p>{connection.error}</p>
+          <button className="mt-2 underline" onClick={() => restoreSharedSpace()}>
+            Refresh connection
+          </button>
+        </div>
+      )}
       {s.storageWarning && (
         <p
           role="alert"
@@ -125,7 +154,14 @@ export function AppShell({
           ◆
         </div>
         {readControls && <div className="mb-6">{readControls}</div>}
-        <fieldset disabled={s.pause.active && !allowDuringPause} className="min-w-0 border-0 p-0">
+        <fieldset
+          disabled={
+            (s.pause.active && !allowDuringPause) ||
+            connection.busy ||
+            (s.space.mode === "shared" && connection.status === "offline")
+          }
+          className="min-w-0 border-0 p-0"
+        >
           {children}
         </fieldset>
       </main>
@@ -177,7 +213,7 @@ export function AppShell({
                   ))}
                   <SheetClose asChild>
                     <Link to="/settings" className="rounded-md border px-4 py-3 text-sm">
-                      Settings & demo roles
+                      {s.space.mode === "demo" ? "Settings & demo roles" : "Settings"}
                     </Link>
                   </SheetClose>
                 </nav>

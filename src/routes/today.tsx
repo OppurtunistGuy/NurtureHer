@@ -2,13 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/nocturne/AppShell";
+import { SpaceConnection } from "@/components/nocturne/SpaceConnection";
 import { RequestDialog } from "@/components/nocturne/RequestDialog";
 import { SubmissionDialog } from "@/components/nocturne/SubmissionDialog";
 import { StatusBadge } from "@/components/nocturne/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { dateKey, effectiveStatus, isOverdue, occursOn, taskKey } from "@/lib/nocturne/logic";
 import { agreementReady } from "@/lib/nocturne/engine";
-import { actions, useNocturne } from "@/lib/nocturne/store";
+import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 
 export const Route = createFileRoute("/today")({
   head: () => ({ meta: [{ title: "Today — Nocturne" }] }),
@@ -52,6 +53,7 @@ function TodayPage() {
       })}
       title={dom ? `Good day, ${s.names.dom}` : `Your routine, ${s.names.sub}`}
     >
+      <SpaceConnection />
       {s.agreement.document && (
         <p className="mb-6 border-l-2 border-wine pl-4 text-xs leading-6 text-muted-foreground">
           Agreed sessions remain the focus until December 16, around exams and family commitments.{" "}
@@ -166,8 +168,8 @@ function TodayPage() {
                       variant="ghost"
                       size="sm"
                       className="mt-2"
-                      onClick={() => {
-                        if (actions.excuseTask(r.id).ok) toast("Excused for today");
+                      onClick={async () => {
+                        if ((await actions.excuseTask(r.id)).ok) toast("Excused for today");
                       }}
                     >
                       Excuse today

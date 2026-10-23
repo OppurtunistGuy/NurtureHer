@@ -20,6 +20,7 @@ import { Route as RequestsRouteImport } from './routes/requests'
 import { Route as RoutinesRouteImport } from './routes/routines'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TodayRouteImport } from './routes/today'
+import { Route as ApiSpaceRouteImport } from './routes/api.space'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -76,6 +77,11 @@ const TodayRoute = TodayRouteImport.update({
   path: '/today',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSpaceRoute = ApiSpaceRouteImport.update({
+  id: '/api/space',
+  path: '/api/space',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
   '/today': typeof TodayRoute
+  '/api/space': typeof ApiSpaceRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
   '/today': typeof TodayRoute
+  '/api/space': typeof ApiSpaceRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -116,6 +124,7 @@ export interface FileRoutesById {
   '/routines': typeof RoutinesRoute
   '/settings': typeof SettingsRoute
   '/today': typeof TodayRoute
+  '/api/space': typeof ApiSpaceRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
     | '/routines'
     | '/settings'
     | '/today'
+    | '/api/space'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -144,6 +154,7 @@ export interface FileRouteTypes {
     | '/routines'
     | '/settings'
     | '/today'
+    | '/api/space'
   id:
     | '__root__'
     | '/'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '/routines'
     | '/settings'
     | '/today'
+    | '/api/space'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -171,6 +183,7 @@ export interface RootRouteChildren {
   RoutinesRoute: typeof RoutinesRoute
   SettingsRoute: typeof SettingsRoute
   TodayRoute: typeof TodayRoute
+  ApiSpaceRoute: typeof ApiSpaceRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -252,6 +265,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TodayRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/space': {
+      id: '/api/space'
+      path: '/api/space'
+      fullPath: '/api/space'
+      preLoaderRoute: typeof ApiSpaceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -267,6 +287,7 @@ const rootRouteChildren: RootRouteChildren = {
   RoutinesRoute: RoutinesRoute,
   SettingsRoute: SettingsRoute,
   TodayRoute: TodayRoute,
+  ApiSpaceRoute: ApiSpaceRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

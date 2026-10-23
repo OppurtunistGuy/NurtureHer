@@ -1,9 +1,10 @@
-import { actions, useNocturne } from "@/lib/nocturne/store";
+import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 import type { Role } from "@/lib/nocturne/types";
 
 /** Demo-only: lets one person preview both sides. Never implies a real partner is connected. */
 export function RoleSwitch() {
   const s = useNocturne();
+  if (s.space.mode !== "demo") return null;
   return (
     <div
       role="radiogroup"

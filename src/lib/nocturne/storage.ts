@@ -23,13 +23,18 @@ const recurrence = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("weekdays"), days: z.array(z.number().int().min(0).max(6)) }),
   z.object({ kind: z.literal("once"), date: z.string() }),
 ]);
-const saved = z.object({
+export const savedStateSchema = z.object({
   version: z.union([z.literal(1), z.literal(2)]),
   onboarded: z.boolean(),
   myRole: role,
   viewRole: role,
   names: z.object({ dom: z.string(), sub: z.string() }),
-  space: z.object({ inviteCode: z.string(), paired: z.boolean(), mode: z.literal("demo") }),
+  space: z.object({
+    inviteCode: z.string(),
+    paired: z.boolean(),
+    mode: z.enum(["demo", "shared"]),
+    id: z.string().optional(),
+  }),
   routines: z.array(
     z.object({
       id: z.string(),
@@ -181,7 +186,9 @@ const saved = z.object({
 
 /** Validate before migration; never blindly cast arbitrary localStorage JSON. */
 export function readStoredState(raw: string): AppState {
-  const value = saved.parse(JSON.parse(raw));
+  const value = savedStateSchema.parse(JSON.parse(raw));
+  if (value.space.mode !== "demo")
+    throw new Error("Shared records must be loaded from the server.");
   const result = {
     ...value,
     version: 2,

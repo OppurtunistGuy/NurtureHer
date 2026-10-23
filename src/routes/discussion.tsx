@@ -5,7 +5,7 @@ import { AppShell } from "@/components/nocturne/AppShell";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { actions, useNocturne } from "@/lib/nocturne/store";
+import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 
 export const Route = createFileRoute("/discussion")({
   head: () => ({ meta: [{ title: "Pause discussion — Nocturne" }] }),
@@ -45,9 +45,9 @@ function DiscussionPage() {
       {s.pause.active && (
         <>
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
-              if (actions.sendMessage(text.trim(), "discussion").ok) setText("");
+              if ((await actions.sendMessage(text.trim(), "discussion")).ok) setText("");
             }}
           >
             <Label htmlFor="discussion-message">Your message</Label>
@@ -72,8 +72,8 @@ function DiscussionPage() {
             </p>
             <Button
               disabled={!bothSpoke || s.pause.resumeAck[s.viewRole]}
-              onClick={() => {
-                if (actions.ackResume().ok) toast("Readiness recorded");
+              onClick={async () => {
+                if ((await actions.ackResume()).ok) toast("Readiness recorded");
               }}
             >
               {s.pause.resumeAck[s.viewRole]

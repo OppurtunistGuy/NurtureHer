@@ -7,6 +7,8 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
+  // Shared spaces use a persistent SQLite file on a Node 24 host.
+  nitro: { preset: "node-server" },
   vite: {
     // Permit the specific internal QA host; do not disable Vite host checks.
     server: { allowedHosts: ["terminal.local"] },

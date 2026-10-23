@@ -15,12 +15,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { actions, useNocturne } from "@/lib/nocturne/store";
+import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 
 export function PauseButton({ compact = false }: { compact?: boolean }) {
   const s = useNocturne(),
     [reason, setReason] = useState("");
-  if (s.pause.active) return null;
+  if (s.pause.active || (s.space.mode === "shared" && !s.space.paired)) return null;
   return (
     <div className="flex items-center gap-1">
       <Button
@@ -29,8 +29,8 @@ export function PauseButton({ compact = false }: { compact?: boolean }) {
         className="border-destructive/50 px-2 text-destructive"
         aria-label="RED — stop now"
         title="Stop immediately"
-        onClick={() => {
-          if (actions.pause("", "RED").ok) toast("RED — stopped immediately");
+        onClick={async () => {
+          if ((await actions.pause("", "RED")).ok) toast("RED — stopped immediately");
         }}
       >
         RED
@@ -41,8 +41,8 @@ export function PauseButton({ compact = false }: { compact?: boolean }) {
         className="border-gold/40 px-2 text-gold"
         aria-label="YELLOW — pause for a check-in"
         title="Pause and check in"
-        onClick={() => {
-          if (actions.pause("", "YELLOW").ok) toast("YELLOW — paused for a check-in");
+        onClick={async () => {
+          if ((await actions.pause("", "YELLOW")).ok) toast("YELLOW — paused for a check-in");
         }}
       >
         YELLOW
@@ -79,8 +79,8 @@ export function PauseButton({ compact = false }: { compact?: boolean }) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => {
-                if (actions.pause(reason.trim()).ok) {
+              onClick={async () => {
+                if ((await actions.pause(reason.trim())).ok) {
                   setReason("");
                   toast("Paused — take the time you need");
                 }
