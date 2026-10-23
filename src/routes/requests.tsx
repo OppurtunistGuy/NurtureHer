@@ -6,7 +6,7 @@ import { RequestDialog, REQUEST_LABEL } from "@/components/nocturne/RequestDialo
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { actions, useNocturne } from "@/lib/nocturne/store";
+import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 import type { PartnerRequest } from "@/lib/nocturne/types";
 
 export const Route = createFileRoute("/requests")({
@@ -97,8 +97,8 @@ function RequestCard({ request: q }: { request: PartnerRequest }) {
           <div className="flex gap-2">
             <Button
               size="sm"
-              onClick={() => {
-                if (actions.respondRequest(q.id, true, response.trim()).ok)
+              onClick={async () => {
+                if ((await actions.respondRequest(q.id, true, response.trim())).ok)
                   toast.success("Request approved");
               }}
             >
@@ -108,8 +108,8 @@ function RequestCard({ request: q }: { request: PartnerRequest }) {
               size="sm"
               variant="outline"
               disabled={!response.trim()}
-              onClick={() => {
-                if (actions.respondRequest(q.id, false, response.trim()).ok)
+              onClick={async () => {
+                if ((await actions.respondRequest(q.id, false, response.trim())).ok)
                   toast("Decision recorded");
               }}
             >

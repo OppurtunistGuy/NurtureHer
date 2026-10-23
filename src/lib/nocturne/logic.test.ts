@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { effectiveStatus, isOverdue, occursOn, randomInviteCode, uid } from "./logic";
+import {
+  clockMinutes,
+  dateKey,
+  effectiveStatus,
+  isOverdue,
+  occursOn,
+  randomInviteCode,
+  uid,
+} from "./logic";
 import type { Routine } from "./types";
 
 const base: Routine = {
@@ -16,6 +24,14 @@ const base: Routine = {
 };
 
 describe("nocturne rules", () => {
+  it("uses the space timezone for the day and deadlines across UTC midnight", () => {
+    const instant = new Date("2026-10-23T23:30:00Z");
+    expect(dateKey(instant, "Asia/Kolkata")).toBe("2026-10-24");
+    expect(dateKey(instant, "UTC")).toBe("2026-10-23");
+    expect(clockMinutes(instant, "Asia/Kolkata")).toBe(300);
+    expect(isOverdue(base, "pending", instant, "Asia/Kolkata")).toBe(false);
+    expect(isOverdue(base, "pending", instant, "UTC")).toBe(true);
+  });
   it("creates random v4 IDs on HTTP previews without crypto.randomUUID", () => {
     const getRandomValues = crypto.getRandomValues.bind(crypto);
     vi.stubGlobal("crypto", { getRandomValues });

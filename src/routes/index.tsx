@@ -1,210 +1,266 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { actions, useNocturne } from "@/lib/nocturne/store";
+import {
+  actions,
+  spaceActions,
+  useNocturne,
+  useSpaceConnection,
+  restoreSharedSpace,
+} from "@/lib/nocturne/store";
+import { invitationToken } from "@/lib/nocturne/space-protocol";
 import type { Role } from "@/lib/nocturne/types";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Nocturne — begin your private space" },
-      {
-        name: "description",
-        content: "Choose your role and create or join a private, consent-first space for two.",
-      },
-      { property: "og:title", content: "Nocturne — begin your private space" },
-      {
-        property: "og:description",
-        content: "A private, consent-first routine space for two partners.",
-      },
+      { title: "Create or join a space — Nocturne Together" },
+      { name: "referrer", content: "no-referrer" },
     ],
   }),
   component: Onboarding,
 });
 
 function Onboarding() {
-  const s = useNocturne();
-  const navigate = useNavigate();
-  const [step, setStep] = useState<0 | 1 | 2>(0);
-  const [role, setRole] = useState<Role | null>(null);
-  const [name, setName] = useState("");
-  const [partner, setPartner] = useState("");
-  const [mode, setMode] = useState<"create" | "join">("create");
-  const [code, setCode] = useState("");
-  const [err, setErr] = useState("");
-  const [adult, setAdult] = useState(false);
-
+  const s = useNocturne(),
+    connection = useSpaceConnection(),
+    navigate = useNavigate(),
+    location = useLocation();
+  const fromLink = new URLSearchParams(location.hash.replace(/^#/, "")).get("invite") ?? "";
+  // URL fragments never reach SSR. Hydrate the same first frame on both sides,
+  // then open the invite after mounting instead of mismatching the server HTML.
+  const [mode, setMode] = useState<"create" | "join" | "demo">("create");
+  const [name, setName] = useState(""),
+    [role, setRole] = useState<Role>("dom"),
+    [adult, setAdult] = useState(false);
+  const [inviteText, setInviteText] = useState(""),
+    [error, setError] = useState("");
+  const [preview, setPreview] = useState<{ creatorName: string; role: Role } | null>(null),
+    [checking, setChecking] = useState(false);
+  const token = invitationToken(inviteText);
   useEffect(() => {
-    if (s.onboarded) navigate({ to: "/today", replace: true });
-  }, [s.onboarded, navigate]);
-
-  function finish() {
-    if (mode === "join") {
-      setErr("Joining needs the connected backend. In demo mode, create a space instead.");
+    if (fromLink) {
+      setInviteText(fromLink);
+      setMode("join");
+    }
+  }, [fromLink]);
+  useEffect(() => {
+    if (s.onboarded && !fromLink && location.hash !== "setup" && mode !== "join")
+      void navigate({ to: "/today", replace: true });
+  }, [s.onboarded, fromLink, location.hash, mode, navigate]);
+  useEffect(() => {
+    if (mode !== "join" || !token) return;
+    let active = true;
+    setChecking(true);
+    setError("");
+    setPreview(null);
+    void spaceActions
+      .preview(token)
+      .then((value) => {
+        if (active) setPreview(value);
+      })
+      .catch((e) => {
+        if (active)
+          setError(e instanceof Error ? e.message : "Unable to open invitation. Please retry.");
+      })
+      .finally(() => {
+        if (active) setChecking(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [token, mode]);
+  async function finish() {
+    setError("");
+    if (!adult || !name.trim()) return;
+    if (mode === "demo") {
+      if (actions.onboard(role, name.trim(), role === "dom" ? "Sub" : "Master").ok)
+        await navigate({ to: "/today" });
       return;
     }
-    if (!adult || !role) return;
-    if (
-      actions.onboard(role, name.trim(), partner.trim() || (role === "dom" ? "Sub" : "Master")).ok
-    )
-      toast.success("Your demo space is ready");
+    if (mode === "join" && !token) {
+      setError("Paste the complete invitation link you received.");
+      return;
+    }
+    const result =
+      mode === "join"
+        ? await spaceActions.join(name.trim(), token)
+        : await spaceActions.create(name.trim(), role);
+    if (result.ok) {
+      if (fromLink) window.history.replaceState(window.history.state, "", "/");
+      await navigate({ to: "/today", replace: true });
+    } else setError(result.error);
   }
-
   return (
     <div className="flex min-h-screen flex-col">
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
-        <p className="eyebrow text-center">A private space for two</p>
+        <p className="eyebrow text-center">A space for two</p>
         <h1 className="mt-2 text-center text-5xl text-ivory">Nocturne Together</h1>
-        <div className="ornament my-6 text-[0.6rem]" aria-hidden>
-          ◆
-        </div>
-
-        {step === 0 && (
-          <section className="space-y-6">
-            <p className="text-center font-display text-xl italic text-muted-foreground">
-              Ritual, structure and care — always on terms you both chose, and always pausable.
-            </p>
-            <ul className="space-y-2 text-sm text-muted-foreground">
-              <li>· Either of you can pause at any time, without consequence.</li>
-              <li>· No image proof, no tracking, no automated punishment.</li>
-              <li>· Health, sleep, work and study always come first.</li>
-            </ul>
-            <label className="flex items-start gap-3 text-sm text-muted-foreground">
-              <input
-                type="checkbox"
-                className="mt-1 accent-primary"
-                checked={adult}
-                onChange={(e) => setAdult(e.target.checked)}
-              />
-              We are both adults (18+) and participate voluntarily.
-            </label>
-            <p className="text-xs leading-5 text-muted-foreground">
-              This is an unencrypted, single-browser demo. Use example names and text, not sensitive
-              information.
-            </p>
-            <Button size="lg" className="w-full" disabled={!adult} onClick={() => setStep(1)}>
-              I understand — continue
-            </Button>
-          </section>
-        )}
-
-        {step === 1 && (
-          <section className="space-y-4">
-            <h2 className="text-2xl">Your role</h2>
-            <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Role">
-              {(["dom", "sub"] as Role[]).map((r) => (
-                <button
-                  key={r}
-                  role="radio"
-                  aria-checked={role === r}
-                  onClick={() => setRole(r)}
-                  className={`surface p-5 text-left transition-colors ${role === r ? "border-wine bg-wine-soft/40" : "hover:border-muted-foreground"}`}
-                >
-                  <span className="font-display text-2xl text-ivory">
-                    {r === "dom" ? "Master" : "Sub"}
-                  </span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
-                    {r === "dom"
-                      ? "Assigns goals, sets routines, reviews check-ins."
-                      : "Submits progress, asks permission, requests changes."}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="name">Your name</Label>
-              <Input
-                id="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                maxLength={40}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="partner">
-                {role === "sub" ? "Master's name (optional)" : "Sub's name (optional)"}
-              </Label>
-              <Input
-                id="partner"
-                value={partner}
-                onChange={(e) => setPartner(e.target.value)}
-                maxLength={40}
-              />
-            </div>
-            <Button
-              size="lg"
-              className="w-full"
-              disabled={!role || !name.trim()}
-              onClick={() => setStep(2)}
-            >
-              Continue
-            </Button>
-          </section>
-        )}
-
-        {step === 2 && (
-          <section className="space-y-4">
-            <h2 className="text-2xl">Your private space</h2>
-            <div className="grid grid-cols-2 gap-2">
-              {(["create", "join"] as const).map((m) => (
-                <Button
-                  key={m}
-                  variant={mode === m ? "default" : "outline"}
-                  onClick={() => {
-                    setMode(m);
-                    setErr("");
-                  }}
-                >
-                  {m === "create" ? "Create" : "Join with code"}
-                </Button>
-              ))}
-            </div>
-            {mode === "create" ? (
-              <div className="surface p-4">
-                <p className="eyebrow">Invite code</p>
-                <p className="mt-1 font-mono text-2xl tracking-widest text-ivory">
-                  {s.space.inviteCode}
-                </p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Status: <span className="text-gold">not paired</span>. In demo mode this code
-                  can't be redeemed — connecting a backend makes codes one-use and expiring.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <Label htmlFor="code">Invite code</Label>
-                <Input
-                  id="code"
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.toUpperCase())}
-                  placeholder="XXXXX-XXXXX"
-                  aria-invalid={!!err}
-                />
-              </div>
-            )}
-            {err && (
-              <p className="text-sm text-destructive" role="alert">
-                {err}
-              </p>
-            )}
-            <Button
-              size="lg"
-              className="w-full"
-              onClick={finish}
-              disabled={mode === "join" && code.length < 11}
-            >
-              {mode === "create" ? "Enter demo space" : "Join space"}
-            </Button>
-            <button
-              className="w-full text-xs text-muted-foreground underline"
-              onClick={() => setStep(1)}
-            >
-              Back
+        <p className="my-6 text-center text-sm leading-6 text-muted-foreground">
+          Create your space. Share a link. Join each other.
+        </p>
+        {s.space.mode === "shared" && mode === "join" && (
+          <p className="mb-4 rounded-md border p-3 text-sm">
+            You already have a space on this browser.{" "}
+            <button className="underline" onClick={() => navigate({ to: "/today" })}>
+              Open your space
             </button>
-          </section>
+            . Use a different browser profile to test joining as the other person.
+          </p>
+        )}
+        <div className="mb-6 grid grid-cols-2 gap-2">
+          <Button
+            variant={mode === "create" ? "default" : "outline"}
+            onClick={() => {
+              setMode("create");
+              setError("");
+            }}
+          >
+            Create a space
+          </Button>
+          <Button
+            variant={mode === "join" ? "default" : "outline"}
+            onClick={() => {
+              setMode("join");
+              setError("");
+            }}
+          >
+            Join a space
+          </Button>
+        </div>
+        <form
+          className="space-y-5"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            await finish();
+          }}
+        >
+          <h2 className="text-2xl">
+            {mode === "join"
+              ? "Join your partner"
+              : mode === "demo"
+                ? "Try it on your own"
+                : "Your space starts here"}
+          </h2>
+          {mode === "join" && (
+            <div className="space-y-2">
+              <Label htmlFor="invite-link">Invitation link</Label>
+              <Input
+                id="invite-link"
+                value={inviteText}
+                onChange={(e) => {
+                  setInviteText(e.target.value);
+                  setPreview(null);
+                  setError("");
+                }}
+                placeholder="Paste the link you received"
+                autoComplete="off"
+              />
+              {checking && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  Opening invitation…
+                </p>
+              )}
+              {preview && (
+                <p className="text-sm text-gold">
+                  {preview.creatorName} invited you to join as{" "}
+                  {preview.role === "dom" ? "Master" : "Sub"}.
+                </p>
+              )}
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="name">Your name</Label>
+            <Input
+              id="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              maxLength={40}
+              required
+              autoComplete="nickname"
+            />
+          </div>
+          {mode !== "join" && (
+            <div>
+              <p className="mb-2 text-sm">Your role</p>
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Role">
+                {(["dom", "sub"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={role === value}
+                    onClick={() => setRole(value)}
+                    className={`surface p-4 text-left ${role === value ? "border-wine bg-wine-soft/40" : ""}`}
+                  >
+                    <span className="font-display text-xl">
+                      {value === "dom" ? "Master" : "Sub"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <label className="flex items-start gap-3 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              className="mt-1 accent-primary"
+              checked={adult}
+              onChange={(e) => setAdult(e.target.checked)}
+            />
+            I am 18+ and participate voluntarily. Either person can pause or stop.
+          </label>
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          {connection.status === "offline" && !error && mode !== "demo" && (
+            <div className="text-sm text-destructive">
+              <p>{connection.error}</p>
+              <button type="button" className="mt-2 underline" onClick={() => restoreSharedSpace()}>
+                Retry connection
+              </button>
+            </div>
+          )}
+          <Button
+            size="lg"
+            className="w-full"
+            disabled={
+              !adult ||
+              !name.trim() ||
+              connection.busy ||
+              checking ||
+              (mode === "join" && (!token || !preview))
+            }
+            type="submit"
+          >
+            {connection.busy
+              ? "Saving…"
+              : mode === "join"
+                ? "Join space"
+                : mode === "demo"
+                  ? "Enter solo demo"
+                  : "Create my space"}
+          </Button>
+          <p className="text-xs leading-5 text-muted-foreground">
+            {mode === "demo"
+              ? "A local demo with example routines. Switch perspectives in Settings to test alone; it does not connect another person."
+              : "No account or password required yet. Keep this browser session to return. Account recovery and deeper setup come later; use example data while testing."}
+          </p>
+        </form>
+        {mode !== "demo" && !s.onboarded && (
+          <button
+            className="mt-6 text-sm text-muted-foreground underline"
+            onClick={() => {
+              setMode("demo");
+              setError("");
+            }}
+          >
+            Try alone first
+          </button>
         )}
       </main>
       <footer className="pb-6 text-center text-xs text-muted-foreground">

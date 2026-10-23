@@ -18,7 +18,7 @@ concurrency:
 jobs:
   quality:
     name: Quality gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Check out the candidate
@@ -58,6 +58,13 @@ jobs:
         run: npm run test:ssr
       - name: Production build
         run: npm run build
+      - name: Install test browser
+        # The pinned hosted image already includes Chrome and its system libraries.
+        # Download the pinned Playwright browser without another apt upgrade.
+        timeout-minutes: 5
+        run: npx playwright install chromium
+      - name: Two-browser create and join acceptance
+        run: npm run test:e2e
       - name: Package the tested build
         run: tar -czf nocturne-build.tar.gz .output
       - name: Upload the tested build

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { dateKey, minutesOf, occursOn, taskKey } from "@/lib/nocturne/logic";
+import { clockMinutes, dateKey, minutesOf, occursOn, taskKey } from "@/lib/nocturne/logic";
 import { useNocturne } from "@/lib/nocturne/store";
 import { agreementReady } from "@/lib/nocturne/engine";
 
@@ -19,9 +19,9 @@ export function useReminders() {
     const tick = () => {
       if (s.pause.active || !s.prefs.inAppReminders) return;
       const d = new Date();
-      const now = d.getHours() * 60 + d.getMinutes();
+      const now = clockMinutes(d, s.space.timeZone);
       if (inQuiet(now, s.prefs.quietStart, s.prefs.quietEnd)) return;
-      const today = dateKey(d);
+      const today = dateKey(d, s.space.timeZone);
       for (const r of s.routines) {
         if (r.reminderMinutes == null || !occursOn(r, today)) continue;
         if (r.optInDaily && !s.tasks[taskKey(r.id, today)]?.optedIn) continue;

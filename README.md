@@ -1,93 +1,73 @@
-# Nocturne Together — Master/Sub workflow build
+# Nocturne Together
 
-An incremental implementation on the supplied Nocturne codebase. The original restrained wine/ivory styling, narrow content column, onboarding and separate pages are retained. No consolidated dashboard of every feature.
+A shared space for two, with separate pages for routines, goals, written check-ins, review, requests, notes and the supplied Master & Sub Agreement. The existing wine/ivory interface is retained.
 
-**This is a single-browser, unencrypted demo, not a production-private service. Use example data only.** Camera proof, actual pairing, authentication, E2EE and screenshot blocking are not implemented or simulated.
+## Create, share and join
+
+1. Open the app, enter your name, choose Master or Sub and confirm voluntary adult participation. Select **Create my space**. No account, password or partner name is required.
+2. Today shows **Your space is ready**, a waiting state and a real invitation link. Copy it and send it to the other person. You can prepare routines and explore while waiting; the shared dynamic has not started.
+3. The other person opens that link on their own browser, sees who invited them and their assigned opposite role, enters their name, confirms participation and selects **Join space**.
+4. Both browsers now read the same space. Names, routines, notes, check-ins, review decisions and pause discussion synchronize while the app is open. Reloading restores membership from the browser session.
+5. Both people review and acknowledge the agreement before task submission. Account registration and deeper onboarding can be added later.
+
+Invitations admit one person, expire after seven days and can be replaced by their creator before pairing. Replacing a link invalidates the old link. A used, expired or invalid invitation displays an explanation instead of creating a second space. Links contain a random invitation secret in the URL fragment, with no names, tasks or agreement text. Anyone holding an unused link can occupy its vacant place: share it directly with the intended person.
+
+The creator can be either role. Live roles are fixed by the server session; there is no live perspective switch. Each member can update their own name in Settings. Opening an invitation in a browser that already belongs to a space does not replace that space.
+
+The space uses the creator's detected timezone for both people's schedule, task dates and reminders. Settings shows that timezone; a differently configured server or partner device cannot move a check-in onto a different day.
+
+## Test alone
+
+Choose **Try alone first** on the start page to open the separate browser-only demo with example routines. Its Settings page allows perspective switching. This is explicitly a solo simulation, not a connected partner. From an existing solo demo, Settings → **Create or join a shared space** starts real setup without deleting the saved demo.
+
+To test a real invitation by yourself, use separate browser profiles or separate browser contexts. Two normal tabs share a cookie and represent the same member. The automated browser test uses isolated desktop and mobile contexts.
 
 ## Run
 
-Changes go to `UAT`, pass CI, and then move to production through a `UAT` → `main` pull request. See `RELEASE.md` for the promotion checks and deployment status.
-
-Tested with Node 24.19 and npm 11. Use a Node version supported by Vite 8 (22.12+ or 24 recommended).
+Requires Node 24 and npm. No external database account, signup service or secret API key is required.
 
 ```sh
-npm ci
-npm run dev
+npm ci --ignore-scripts
+npm run dev -- --host 0.0.0.0
 ```
 
-Open the local address printed by Vite. If the environment cannot enumerate network interfaces, use `npm run dev -- --host 127.0.0.1`. This is a source project, not a double-click HTML file or APK.
+For production server output:
 
-For this build use `package-lock.json` and `npm ci`. The original `bun.lock` is retained for provenance but has not been regenerated.
+```sh
+npm run build
+npm run start
+```
 
-## Explore both roles
+The default database is `data/nocturne.sqlite`. Set `NOCTURNE_DB_PATH` to a durable writable file location on the host. Keep the SQLite file and its WAL/SHM files together. Back it up outside the source repository. `HOST` and `PORT` configure the production server. For another physical device, both browsers must open the same reachable server address; localhost on a phone points to that phone. Public sharing requires a deployed Node server with HTTPS and persistent storage.
 
-1. Complete onboarding with example names and choose Master or Sub.
-2. Open Agreement and acknowledge it.
-3. In Settings → Demo perspective, switch to the other role and acknowledge the same agreement.
-4. In Sub perspective, submit a check-in from Today.
-5. In Master perspective, open Proof review and accept or request clarification.
-6. Pause from the header. Operational controls become read-only for both perspectives.
-7. Open Pause discussion, contribute as each role, then confirm readiness as each role. Only after both confirmations does the app resume.
+A Dockerfile is included for a single Node host:
 
-Demo perspective is deliberately kept in Settings rather than the main header. It is a preview tool, **not authentication**. A real paired application must not expose role switching.
+```sh
+docker build -t nocturne-together .
+docker run --rm -p 3000:3000 -v nocturne-data:/data nocturne-together
+```
 
-## What is implemented
+The container definition has not been built in this workspace. The tested deployment target is Nitro `node-server`, not static hosting or an unconfigured Cloudflare Worker. No hosting provider or public production URL has been connected. Use `package-lock.json`; the original `bun.lock` is retained only for provenance.
 
-| Page             | Purpose                                                                                                                 |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Today            | Chronological assignments and a small Master summary; no expanded review queue                                          |
-| Routines         | Master creation/edit/deletion, scheduling, opt-in, instruction acknowledgement and check-in policy; Sub change requests |
-| Goals            | Master-owned goals with four areas, criteria, review date and active/completed/archived states                          |
-| Proof review     | Written submissions, preserved instruction snapshots, manual acceptance/clarification/rejection and history             |
-| Requests         | Permission, extension, skip, illness and routine-change requests; Master decisions and history                          |
-| Notes            | Shared text notes, separate from task evidence and pause discussion                                                     |
-| Agreement        | Mutual boundaries, proposals and acknowledgements                                                                       |
-| Activity         | Decision and operational history (latest 300 entries)                                                                   |
-| Pause discussion | Dedicated conversation and independent readiness confirmations                                                          |
-| Settings         | Reminders, capability limitations and explicit demo tooling                                                             |
+## Shared storage and session boundary
 
-### Authority
+Shared records are persisted in SQLite on the server, never in the solo-demo localStorage key. Each browser receives a random HttpOnly, SameSite=Strict cookie; only its hash is stored in the membership table. HTTPS responses add Secure. Membership lasts 30 days. This is anonymous browser membership, not an account system: clearing cookies or moving to another device has no recovery flow yet. Use example data during testing.
 
-The Master assigns routines and goals and makes review decisions. The Sub submits evidence and requests changes, but cannot directly edit/delete assignments or accept their own work. Consent, optional daily opt-in, pauses and agreement changes are separate from operational authority. Agreement proposals can be made by either person and resolved only by the other person.
+The server derives the acting role from membership, validates commands and runs the existing domain engine inside a SQLite transaction. Client-supplied role switches, resets and onboarding commands are rejected for shared spaces. Revision checks prevent stale updates from overwriting newer work. A stale safety stop is accepted against current state. Regular synchronization polls every two seconds while the page is visible; writes wait for server confirmation. Connection failures show an error and do not report success or replace the space.
 
-### Supplied agreement
+## Agreement and pause
 
-The Agreement page contains the supplied seven-section Master & Sub Agreement verbatim, followed by its Final Understanding. Each section expands independently. Working limits and future additions are separate from the supplied text. Both people must acknowledge this version; the app does not acknowledge it on their behalf.
+The Agreement page contains the supplied seven sections and Final Understanding verbatim. Previous terms are archived; fresh acknowledgements are required from both people. New agreement installation waits until an active pause is resolved. Negotiated additions remain separate from the supplied base document. The December 16 arrangement is displayed without guessing a year or automatically expanding the dynamic.
 
-Existing terms and acknowledgements are archived when this version is installed. Routines, submissions, goals and history are preserved. If an existing dynamic is paused, installation waits until discussion and mutual readiness have resumed it. This preserves the pause lock. Reloading an already installed version does not reset acknowledgements again.
+RED stops; YELLOW pauses for a check-in. While paused, both roles are blocked from operational changes, name changes and invitation changes. Only the current pause discussion and independent readiness acknowledgements can change shared activity. Both people must contribute to that discussion before either can confirm readiness. A new message resets readiness. Only both confirmations resume the dynamic. Unpaired spaces have no active dynamic to pause; this avoids a pause that could never be mutually resumed before joining.
 
-RED immediately stops activity; YELLOW pauses for a check-in. Both enter the same operational lock and require discussion plus mutual readiness before resuming. Neither signal can be replaced through an ordinary agreement proposal. The session-focused arrangement through December 16 appears on Today and Agreement; no year or automatic expansion afterward is inferred.
+The Master assigns and reviews; the Sub submits and requests changes. Acceptance completes a task. A missed task or rejected submission never automatically triggers a punishment.
 
-### Submission lifecycle
+## Privacy limits
 
-`Assigned → Submitted → Master review → Accepted / Clarification / Rejected`
+No camera, media upload, tracking, intimate proof requirement, screenshot blocking or liveness/biometric verification is implemented. Written submissions are self-reported evidence for manual review. Shared text is readable on the server and by the two members; there is no end-to-end encryption. Same-origin scripts or a compromised browser/server can expose data. The public repository contains the supplied agreement, not live records or media.
 
-Only acceptance produces a new completed task. Rejection/clarification requires feedback and permits another submission; attempts remain in history. No punishments or confidence scores are generated. Legacy task completions are preserved as historical self-reports, not converted to reviewed submissions.
-
-### Neutral prompts
-
-A routine can optionally use a neutral, one-use, 60-second text prompt. These routines require daily opt-in. Changing an existing proof policy, or adding a neutral-prompt routine, resets both agreement acknowledgements. The prompt response is text evidence for manual review, **not verified identity, liveness, secrecy or task performance**. A new local session ID binds each attempt; the active challenge is ephemeral and invalidated on pause, routine edits, role changes and reload. The submitted prompt is retained with the response for review. No shared secret is collected or stored.
-
-### Pause lock
-
-The domain engine uses an allowlist during a pause. Routine/goal changes, task actions, proof generation/submission, reviews, requests/decisions, notes, agreement changes/acknowledgements, preferences, invite regeneration and in-app reset are blocked. The only changes permitted are pause discussion and readiness acknowledgement. Browsing, history filters and the demo perspective selector remain usable.
-
-Both people must post in the **current** pause discussion before readiness can be confirmed. A new discussion message clears both previous readiness confirmations. Participation cannot prove the quality of a discussion: each person must voluntarily decide whether to resume. Pauses do not secretly accrue failure or penalties; deadlines remain visible and can be adjusted after discussion.
-
-## Architecture
-
-- React 19, TypeScript, TanStack Start/Router, Vite, Tailwind v4 and Radix UI.
-- `src/lib/nocturne/engine.ts`: pure command/state-transition engine with role and pause rules.
-- `store.ts`: React subscription adapter, local persistence, error reporting and action results.
-- `storage.ts`: schema validation and migration from version 1.
-- `types.ts`: routines, goals, requests, submissions, agreements and discussion types.
-- Existing SSR error wrapper, CSRF middleware, route splitting and Lovable configuration are retained.
-
-The original `nocturne.demo.v1` browser key is reused to migrate existing demo data. Valid old routines, task records, messages and history are retained; new collections default to empty. Old agreements require re-acknowledgement. An old active pause receives a fresh discussion session. Invalid saved data is not silently overwritten; writes are blocked until the user explicitly clears the demo. Storage events refresh other tabs, and commands check current persisted state before changing it. This is best-effort local coordination, not transactional multi-user security.
-
-Remote Google Fonts requests have been removed. The existing font stacks fall back to locally available serif/sans fonts; self-host licensed font assets later if exact typography is required.
-
-## Checks
+## Checks and release
 
 ```sh
 npm test
@@ -95,8 +75,10 @@ npm run typecheck
 npm run lint
 npm run test:ssr
 npm run build
+npx playwright install --with-deps chromium
+npm run test:e2e
 ```
 
-`test:ssr` starts a temporary local Vite server and checks all 11 routes. Tests include pure domain rules, persistence guards, migration, and a rendered React integration workflow without mocking application actions. See `IMPLEMENTATION.md` for validation scope and production gaps.
+The browser test starts the built Node server with a disposable database and uses isolated desktop/mobile sessions for creation, invitation, joining, reloads, profile updates, shared routines/notes, role restrictions, pause/discussion/resume and used-link rejection. Domain/API tests also cover concurrency, expired links, stale writes, persistence across repository restarts, cross-origin rejection and independent acknowledgements. See `QA.md` for results and `IMPLEMENTATION.md` for design boundaries.
 
-Keep the supplied `AGENTS.md` rules when syncing changes back to Lovable/GitHub. No git history has been rewritten by this build.
+All changes go to `UAT` first, pass CI, then move through a `UAT` → `main` PR. See `RELEASE.md`. The existing published history and `AGENTS.md` rules are preserved.

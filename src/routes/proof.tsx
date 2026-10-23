@@ -5,7 +5,7 @@ import { AppShell } from "@/components/nocturne/AppShell";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { actions, useNocturne } from "@/lib/nocturne/store";
+import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 import type { Submission } from "@/lib/nocturne/types";
 
 export const Route = createFileRoute("/proof")({
@@ -74,8 +74,8 @@ function ProofPage() {
 function ReviewCard({ entry: x }: { entry: Submission }) {
   const s = useNocturne(),
     [response, setResponse] = useState("");
-  const decide = (decision: "accepted" | "revision" | "rejected") => {
-    if (actions.review(x.id, decision, response.trim()).ok)
+  const decide = async (decision: "accepted" | "revision" | "rejected") => {
+    if ((await actions.review(x.id, decision, response.trim())).ok)
       toast.success("Review decision recorded");
   };
   return (

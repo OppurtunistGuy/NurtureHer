@@ -13,7 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { actions, useNocturne } from "@/lib/nocturne/store";
+import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 import { dateKey } from "@/lib/nocturne/logic";
 import type { RequestKind, RequestReason, Routine } from "@/lib/nocturne/types";
 
@@ -96,10 +96,10 @@ export function RequestDialog({
                 (kind === "extension" && !returnAt) ||
                 (["permission", "routine_change"].includes(kind) && !note.trim())
               }
-              onClick={() => {
-                const result = actions.submitRequest({
+              onClick={async () => {
+                const result = await actions.submitRequest({
                   kind,
-                  date: dateKey(),
+                  date: dateKey(new Date(), s.space.timeZone),
                   reason,
                   note: note.trim(),
                   ...(routine ? { routineId: routine.id } : {}),

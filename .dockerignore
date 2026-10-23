@@ -1,0 +1,12 @@
+node_modules
+.output
+.git
+.wrangler
+.nitro
+.tanstack
+data
+*.sqlite*
+*.log
+*.zip
+.env
+.env.*

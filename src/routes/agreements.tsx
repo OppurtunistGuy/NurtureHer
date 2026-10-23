@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/nocturne/AppShell";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { actions, useNocturne } from "@/lib/nocturne/store";
+import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 
 export const Route = createFileRoute("/agreements")({
   head: () => ({
@@ -102,8 +102,8 @@ function AgreementsPage() {
         <Button
           className="mt-4"
           disabled={!!a.ack[me]}
-          onClick={() => {
-            if (actions.acknowledgeAgreement().ok) toast.success("Agreement acknowledged");
+          onClick={async () => {
+            if ((await actions.acknowledgeAgreement()).ok) toast.success("Agreement acknowledged");
           }}
         >
           {a.ack[me] ? "You've acknowledged" : "I acknowledge this agreement"}
@@ -161,8 +161,8 @@ function AgreementsPage() {
         <Button
           className="mt-3"
           disabled={!text.trim()}
-          onClick={() => {
-            if (actions.propose(section, text.trim()).ok) {
+          onClick={async () => {
+            if ((await actions.propose(section, text.trim())).ok) {
               setText("");
               toast.success("Proposal sent");
             }

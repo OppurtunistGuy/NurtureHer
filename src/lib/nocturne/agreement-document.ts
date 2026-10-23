@@ -135,7 +135,7 @@ export function upgradeAgreement(state: AppState, now: Date): AppState {
     return state;
   if (state.pause.active) return { ...state, agreementUpdatePending: true };
   const old = state.agreement;
-  const current = createAgreement(dateKey(now));
+  const current = createAgreement(dateKey(now, state.space.timeZone));
   const previous = {
     version: old.document?.version ?? "previous-template",
     archivedAt: now.toISOString(),

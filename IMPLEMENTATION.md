@@ -1,47 +1,32 @@
-# Implementation notes — 23 October 2026
+# Implementation notes — shared create/join flow
 
-## Delivered scope
+## Root cause and change
 
-This build extends the uploaded application rather than replacing it. Navigation remains page-based, with eight compact desktop destinations and a mobile bottom bar plus More sheet. Goals, review queues, requests, notes and agreements are not dumped onto Today.
+The previous Join button deliberately returned a backend-required error. Its code and pairing status existed only in localStorage; another device could not redeem the code or see the creator's space. Local workflow tests did not exercise that path.
 
-New files include the domain engine, migration schema, Goals/Proof/Requests/Discussion routes, submission dialog and regression tests. Existing routine, onboarding, Today, notes, agreement and settings screens have been connected to the new command boundary. Controls show errors rather than reporting success after a rejected command.
+Setup is now one short form. Creating a space stores a server record and returns an expiring invitation. Opening it previews only the creator's name and vacant role. Joining atomically consumes the invitation, creates the other browser's membership and updates the same space. Existing demo data remains on its original browser key; it is not silently uploaded or deleted. A separate solo-demo entry supports testing without a partner.
 
-## Supplied Master & Sub Agreement
+## Implementation
 
-`src/lib/nocturne/agreement-document.ts` stores the complete supplied wording and installs version `master-sub-2026-10-23-v1`. The Agreement route renders seven collapsible sections and Final Understanding, with separate acknowledgement, working limits, additions and archive areas. Role labels are Master/Sub. Existing custom names are preserved.
+- `space-api.server.ts`: same-origin JSON API, bounded request bodies, validation, no-store responses and HttpOnly membership cookie.
+- `space-repository.server.ts`: persistent Node SQLite repository, member-derived actor, atomic invitation redemption, revision checks and server-side domain transitions.
+- `space-protocol.ts`: snapshot shape and fragment-based invitation links without names or private text.
+- `initial-state.ts`: shared state factory without importing a React store into the server.
+- `store.ts`: server-confirmed shared actions, initial session restoration, polling, stale-state reconciliation and an independent legacy local-demo path.
+- `SpaceConnection.tsx`: waiting/connected status, copyable link, replacement invitations and own-name update.
+- `index.tsx`: create/join/solo entry without account signup or deeper onboarding.
+- `scripts/browser-smoke.mjs`: production server plus independent desktop/mobile browser contexts. No application actions or API responses are mocked.
 
-Migration archives previous terms and their acknowledgements, preserves operational data, clears current acknowledgements, and installs only once. During an active pause it records that an update is pending and waits for discussion and mutual resume before installing. RED and YELLOW immediately enter the existing pause lock. Missed tasks still do not trigger automatic punishments. The December 16 arrangement is displayed without guessing a year or automatically broadening the dynamic afterward.
+The existing domain engine, agreement document, page navigation, submission review and pause discussion remain in use. UI handlers now await shared writes before reporting success. Live role switching and local reset are hidden and rejected server-side. Client-supplied actor fields cannot grant authority.
 
-## Privacy boundaries
+Every server change executes inside BEGIN IMMEDIATE, reads current state, verifies membership and revision, validates the resulting state and commits atomically. Safety stops bypass stale revision rejection, then run against current state. Failed mutations roll back; an outdated request receives a current snapshot and must be deliberately retried. A stopped dynamic cannot accept a later operational write. No new external accounts, cloud services or credentials have been connected.
 
-- No camera, microphone, GPS, media upload, facial recognition or covert monitoring.
-- No fake camera result, fake encryption badge, or misleading AI confidence score.
-- No third-party font requests in app pages.
-- All application text remains unencrypted localStorage data. It can be read/modified by someone with browser/device access, same-origin script execution or developer tools.
-- There is no authenticated relationship, backend ACL, signed invite redemption or cloud synchronization. The shared demo selector cannot be treated as a production permission mechanism.
-- Client-side roles, timestamps, history and prompt matching are not cryptographic evidence and cannot prevent intentional local tampering.
-- Local pause enforcement is thoroughly tested, but real multi-user enforcement requires an atomic backend check before every write. Two browser tabs cannot provide transactional guarantees.
-- No app control can guarantee prevention of another device photographing a displayed screen. This build does not promise screenshot blocking.
-- The in-app operational reset is blocked during pause; browser/site-data controls remain independent. Privacy deletion in a future service must not depend on partner approval.
+## Deployment boundary
 
-## Native/media module is NOT built
+The build target changes from the previous default Cloudflare module to Nitro node-server because the shared repository uses Node 24's built-in SQLite. It needs one persistent writable filesystem. Node hosting must preserve the database across deployments and use HTTPS. Static hosting, ephemeral serverless filesystems and unconfigured Cloudflare Workers are unsupported. The app is runnable with `npm run start`; no public host or production URL has been provisioned. The Dockerfile is provided but not locally validated.
 
-If approved separately, begin with feasibility tests on physical devices. Do not change the web experience to pretend unsupported hardware works. A future module would need explicit, revocable task-specific consent; visible camera indicators; no intimate proof; on-device processing; an honest unsupported state; and a validated threat model. Obstruction means insufficient evidence, not proof of dishonesty. Detection of a person/object does not prove task completion. Secret/decoy text is not a substitute for authentication or encryption.
+## Remaining scope
 
-Production media would also require a carefully reviewed key-management design, retention/deletion policy, access authorization, content-type validation, no public URLs, and secure delivery. “No download button” and view-once UI are not exfiltration protection. No such media security claims are made here.
+Anonymous sessions last 30 days and have no recovery, account identity, device transfer, access revocation UI or re-pairing flow. Invitations are bearer links: possession permits joining the single vacant seat until redemption/expiry. Browser cookies and server state bind roles but do not establish a person's real-world identity. A mature release still needs identity/recovery, retention/deletion controls, operational abuse protection, hosting/backups, transport configuration and security review.
 
-## Production next steps
-
-1. Choose backend and identity provider with the user before connecting an account/service.
-2. Bind roles to authenticated users; remove demo role switching.
-3. Execute the command engine on a trusted server with resource ownership checks, revision checks, idempotency and atomic pause/commit transactions.
-4. Replace client timestamps and mutable activity with authoritative server records. Coordinate in-flight operations with a pause epoch so a paused operation cannot commit later.
-5. Design retention, deletion, account/device revocation, backup and encryption/E2EE before accepting sensitive information.
-6. Replace local neutral prompts with server-bound one-use expiring challenges if needed. Do not call text matching liveness verification.
-7. Perform real-browser mobile/desktop visual QA, accessibility checks, device/timezone tests and a security review before deployment.
-
-## Validation
-
-The project includes domain, storage and rendered-UI integration tests plus an 11-route HTTP/SSR smoke test. Exact final results are recorded in `QA.md`.
-
-Follow-up validation used the supported managed browser preview and completed a Chrome desktop smoke cycle. It found and fixed the internal development-host allowlist and HTTP-context UUID startup issues; see `QA.md`. Mobile/cross-browser visual checks and native hardware/camera tests remain uncompleted. No claims of device-camera feasibility, production privacy or penetration testing should be inferred from these checks.
+No E2EE, media/camera module, facial recognition, screenshot prevention, location tracking or automated disciplinary action is added. Clear browser/server failures are reported rather than replaced with simulated success. Use example data during this testing stage.

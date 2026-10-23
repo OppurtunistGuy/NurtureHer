@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { actions, useNocturne } from "@/lib/nocturne/store";
+import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 import { dateKey, uid } from "@/lib/nocturne/logic";
 import type { Goal } from "@/lib/nocturne/types";
 
@@ -67,7 +67,7 @@ function GoalsPage() {
                     title: "",
                     instructions: "",
                     criteria: "",
-                    dueDate: dateKey(),
+                    dueDate: dateKey(new Date(), s.space.timeZone),
                     category: "personal",
                     status: "active",
                   })
@@ -128,9 +128,11 @@ function GoalEditor({ initial, done }: { initial: Goal; done: () => void }) {
   return (
     <form
       className="space-y-5"
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
-        if (actions.saveGoal({ ...g, title: g.title.trim(), criteria: g.criteria.trim() }).ok) {
+        if (
+          (await actions.saveGoal({ ...g, title: g.title.trim(), criteria: g.criteria.trim() })).ok
+        ) {
           toast.success("Goal saved");
           done();
         }

@@ -3,89 +3,13 @@ import { toast } from "sonner";
 import { dateKey, randomInviteCode, uid } from "./logic";
 import { transition, type Command } from "./engine";
 import { readStoredState } from "./storage";
-import { createAgreement, upgradeAgreement } from "./agreement-document";
+import { upgradeAgreement } from "./agreement-document";
 import type { AppState, Goal, PartnerRequest, Role, Routine, Submission } from "./types";
+import type { SpaceSnapshot } from "./space-protocol";
 
 const KEY = "nocturne.demo.v1";
-export function createInitialState(): AppState {
-  const r = (
-    title: string,
-    windowStart: string,
-    windowEnd: string,
-    instructions: string,
-    extra: Partial<Routine> = {},
-  ): Routine => ({
-    id: uid(),
-    title,
-    windowStart,
-    windowEnd,
-    instructions,
-    recurrence: { kind: "daily" },
-    reminderMinutes: 10,
-    enabled: true,
-    requiresAck: false,
-    optInDaily: false,
-    proof: "text",
-    revision: 1,
-    ...extra,
-  });
-  return {
-    version: 2,
-    onboarded: false,
-    myRole: "dom",
-    viewRole: "dom",
-    names: { dom: "Master", sub: "Sub" },
-    space: { inviteCode: randomInviteCode(), paired: false, mode: "demo" },
-    routines: [
-      r("Wake-up check-in", "05:30", "06:00", "A short good-morning note when you're up."),
-      r(
-        "Morning ritual",
-        "06:00",
-        "06:45",
-        "Water, a gentle stretch, and one intention for the day.",
-        { requiresAck: true },
-      ),
-      r(
-        "Shower check-in",
-        "06:45",
-        "07:30",
-        "Text-only confirmation. Never capture private activities.",
-        { proof: "confirmation" },
-      ),
-      r(
-        "Outfit check-in",
-        "07:30",
-        "08:15",
-        "Describe your outfit in words. No photo or camera access.",
-        { recurrence: { kind: "weekdays", days: [1, 2, 3, 4, 5] } },
-      ),
-      r(
-        "Focus challenge",
-        "12:00",
-        "20:00",
-        "Optional: choose one focus block and reflect on how it went.",
-        { optInDaily: true, reminderMinutes: null },
-      ),
-      r("Evening reflection", "22:00", "22:45", "One line about your day, then rest."),
-    ],
-    tasks: {},
-    requests: [],
-    goals: [],
-    submissions: [],
-    agreement: createAgreement(dateKey()),
-    pause: { active: false, resumeAck: { dom: false, sub: false } },
-    messages: [],
-    activity: [
-      {
-        id: uid(),
-        at: new Date().toISOString(),
-        by: "system",
-        text: "Single-device demo created with the supplied Master & Sub Agreement. Example routines are editable by the Master.",
-      },
-    ],
-    prefs: { inAppReminders: true, quietStart: "23:00", quietEnd: "05:00" },
-  };
-}
+export { createInitialState } from "./initial-state";
+import { createInitialState } from "./initial-state";
 
 let state = createInitialState();
 const serverState = state;
@@ -115,6 +39,19 @@ function load() {
 function subscribe(l: () => void) {
   load();
   listeners.add(l);
+  if (!started) {
+    started = true;
+    void restoreSharedSpace();
+  }
+  if (!poll)
+    poll = window.setInterval(() => {
+      if (
+        state.space.mode === "shared" &&
+        !connection.busy &&
+        document.visibilityState !== "hidden"
+      )
+        void restoreSharedSpace();
+    }, 2000);
   const onStorage = (event: StorageEvent) => {
     if (event.key !== KEY && event.key !== null) return;
     refresh();
@@ -123,11 +60,15 @@ function subscribe(l: () => void) {
   window.addEventListener("storage", onStorage);
   return () => {
     listeners.delete(l);
+    if (!listeners.size && poll) {
+      window.clearInterval(poll);
+      poll = undefined;
+    }
     window.removeEventListener("storage", onStorage);
   };
 }
 function refresh() {
-  if (memoryOnly) return;
+  if (memoryOnly || state.space.mode === "shared") return;
   try {
     const raw = localStorage.getItem(KEY);
     if (raw === lastRaw) return;
@@ -157,6 +98,8 @@ function dispatch(command: Command): ActionResult {
   load();
   refresh();
   try {
+    if (state.space.mode === "shared")
+      throw new Error("Shared-space changes must be confirmed by the server.");
     if (state.storageWarning && !["view", "reset"].includes(command.type))
       throw new Error(state.storageWarning);
     const next = upgradeAgreement(
@@ -192,42 +135,188 @@ function dispatch(command: Command): ActionResult {
   }
 }
 
-export const actions = {
-  onboard: (role: Role, name: string, partner: string) =>
-    dispatch({ type: "onboard", role, name, partner }),
-  setView: (role: Role) => dispatch({ type: "view", role }),
-  regenerateInvite: () => dispatch({ type: "invite", code: randomInviteCode() }),
-  reset: () => dispatch({ type: "reset", initial: createInitialState() }),
-  saveRoutine: (routine: Routine) => dispatch({ type: "routine.save", routine }),
-  deleteRoutine: (id: string) => dispatch({ type: "routine.delete", id }),
-  saveGoal: (goal: Goal) => dispatch({ type: "goal.save", goal }),
-  prepareTask: (id: string, preparation: "optIn" | "acknowledge" | "decline") =>
-    dispatch({ type: "task.prepare", id, preparation }),
-  excuseTask: (id: string) => dispatch({ type: "task.excuse", id }),
-  generateChallenge: (id: string) => dispatch({ type: "challenge", id }),
-  submitProof: (id: string, text: string, challengeId?: string) =>
-    dispatch({ type: "submission", id, text, challengeId }),
-  review: (
-    id: string,
-    decision: Extract<Submission["status"], "accepted" | "revision" | "rejected">,
-    response: string,
-  ) => dispatch({ type: "review", id, decision, response }),
-  submitRequest: (request: Omit<PartnerRequest, "id" | "at" | "by" | "status">) =>
-    dispatch({ type: "request", request }),
-  respondRequest: (id: string, accept: boolean, response: string) =>
-    dispatch({ type: "request.resolve", id, accept, response }),
-  pause: (reason: string, signal?: "RED" | "YELLOW") =>
-    dispatch({ type: "pause", reason, ...(signal ? { signal } : {}) }),
-  ackResume: () => dispatch({ type: "resume" }),
-  acknowledgeAgreement: () => dispatch({ type: "agreement.ack" }),
-  propose: (section: string, text: string) =>
-    dispatch({ type: "agreement.propose", section, text }),
-  resolveProposal: (id: string, accept: boolean) =>
-    dispatch({ type: "agreement.resolve", id, accept }),
-  sendMessage: (text: string, channel: "notes" | "discussion" = "notes", routineId?: string) =>
-    dispatch({ type: "message", text, channel, routineId }),
-  setPrefs: (patch: Partial<AppState["prefs"]>) => dispatch({ type: "prefs", patch }),
+function makeActions<T>(dispatch: (command: Command) => T) {
+  return {
+    onboard: (role: Role, name: string, partner: string) =>
+      dispatch({ type: "onboard", role, name, partner }),
+    setView: (role: Role) => dispatch({ type: "view", role }),
+    regenerateInvite: () => dispatch({ type: "invite", code: randomInviteCode() }),
+    reset: () => dispatch({ type: "reset", initial: createInitialState() }),
+    saveRoutine: (routine: Routine) => dispatch({ type: "routine.save", routine }),
+    deleteRoutine: (id: string) => dispatch({ type: "routine.delete", id }),
+    saveGoal: (goal: Goal) => dispatch({ type: "goal.save", goal }),
+    prepareTask: (id: string, preparation: "optIn" | "acknowledge" | "decline") =>
+      dispatch({ type: "task.prepare", id, preparation }),
+    excuseTask: (id: string) => dispatch({ type: "task.excuse", id }),
+    generateChallenge: (id: string) => dispatch({ type: "challenge", id }),
+    submitProof: (id: string, text: string, challengeId?: string) =>
+      dispatch({ type: "submission", id, text, challengeId }),
+    review: (
+      id: string,
+      decision: Extract<Submission["status"], "accepted" | "revision" | "rejected">,
+      response: string,
+    ) => dispatch({ type: "review", id, decision, response }),
+    submitRequest: (request: Omit<PartnerRequest, "id" | "at" | "by" | "status">) =>
+      dispatch({ type: "request", request }),
+    respondRequest: (id: string, accept: boolean, response: string) =>
+      dispatch({ type: "request.resolve", id, accept, response }),
+    pause: (reason: string, signal?: "RED" | "YELLOW") =>
+      dispatch({ type: "pause", reason, ...(signal ? { signal } : {}) }),
+    ackResume: () => dispatch({ type: "resume" }),
+    acknowledgeAgreement: () => dispatch({ type: "agreement.ack" }),
+    propose: (section: string, text: string) =>
+      dispatch({ type: "agreement.propose", section, text }),
+    resolveProposal: (id: string, accept: boolean) =>
+      dispatch({ type: "agreement.resolve", id, accept }),
+    sendMessage: (text: string, channel: "notes" | "discussion" = "notes", routineId?: string) =>
+      dispatch({ type: "message", text, channel, routineId }),
+    setPrefs: (patch: Partial<AppState["prefs"]>) => dispatch({ type: "prefs", patch }),
+  };
+}
+export const actions = makeActions(dispatch);
+
+type Connection = {
+  status: "checking" | "none" | "connected" | "offline";
+  busy: boolean;
+  error: string;
+  revision: number;
+  invite: SpaceSnapshot["invite"];
+  createdByMe: boolean;
+};
+const initialConnection: Connection = {
+  status: "checking",
+  busy: false,
+  error: "",
+  revision: 0,
+  invite: null,
+  createdByMe: false,
+};
+let connection = initialConnection;
+let started = false,
+  poll: number | undefined,
+  generation = 0,
+  inFlight = 0;
+const emit = () => listeners.forEach((listener) => listener());
+export function useSpaceConnection() {
+  return useSyncExternalStore(
+    subscribe,
+    () => connection,
+    () => initialConnection,
+  );
+}
+function connect(snapshot: SpaceSnapshot) {
+  if (state.space.id === snapshot.state.space.id && connection.revision > snapshot.revision) return;
+  if (
+    state.space.id === snapshot.state.space.id &&
+    connection.revision === snapshot.revision &&
+    connection.invite?.token === snapshot.invite?.token &&
+    connection.status === "connected" &&
+    !connection.error
+  )
+    return;
+  state = snapshot.state;
+  connection = {
+    ...connection,
+    status: "connected",
+    error: "",
+    revision: snapshot.revision,
+    invite: snapshot.invite,
+    createdByMe: snapshot.createdByMe,
+  };
+  emit();
+}
+async function requestSpace(body?: unknown) {
+  const response = await fetch("/api/space", {
+    method: body ? "POST" : "GET",
+    credentials: "same-origin",
+    cache: "no-store",
+    signal: AbortSignal.timeout(15000),
+    ...(body
+      ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }
+      : {}),
+  });
+  const data = await response.json();
+  return { response, data };
+}
+export async function restoreSharedSpace() {
+  const currentGeneration = generation;
+  try {
+    const { response, data } = await requestSpace();
+    if (generation !== currentGeneration) return;
+    if (response.ok) connect(data as SpaceSnapshot);
+    else if (response.status === 401 && state.space.mode !== "shared") {
+      connection = { ...connection, status: "none", error: "" };
+      emit();
+    } else {
+      connection = {
+        ...connection,
+        status: "offline",
+        error: data.error ?? "Unable to open your space.",
+      };
+      emit();
+    }
+  } catch {
+    if (generation !== currentGeneration) return;
+    connection = {
+      ...connection,
+      status: "offline",
+      error:
+        "Cannot reach the shared space. Check your connection and retry. Nothing has been replaced.",
+    };
+    emit();
+  }
+}
+async function changeSpace(body: Record<string, unknown>): Promise<ActionResult> {
+  const safetyStop =
+    body["op"] === "command" && (body["command"] as Command | undefined)?.type === "pause";
+  if (connection.busy && !safetyStop)
+    return { ok: false, error: "Wait for the current change to finish." };
+  generation++;
+  inFlight++;
+  connection = { ...connection, busy: true };
+  emit();
+  try {
+    const { response, data } = await requestSpace(body);
+    if (!response.ok) {
+      if (data.snapshot) connect(data.snapshot as SpaceSnapshot);
+      throw new Error(data.error ?? "The change could not be saved. Please retry.");
+    }
+    connect(data as SpaceSnapshot);
+    return { ok: true };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Could not save this change.";
+    connection = { ...connection, error: message };
+    toast.error(message);
+    return { ok: false, error: message };
+  } finally {
+    inFlight--;
+    connection = { ...connection, busy: inFlight > 0 };
+    emit();
+  }
+}
+export const uiActions = makeActions(async (command: Command): Promise<ActionResult> => {
+  if (state.space.mode !== "shared") return dispatch(command);
+  if (command.type === "invite")
+    return changeSpace({ op: "rotate", revision: connection.revision });
+  return changeSpace({ op: "command", command, revision: connection.revision });
+});
+export const spaceActions = {
+  create: (name: string, role: Role) =>
+    changeSpace({
+      op: "create",
+      name,
+      role,
+      adult: true,
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }),
+  join: (name: string, token: string) => changeSpace({ op: "join", name, token, adult: true }),
+  rename: (name: string) => changeSpace({ op: "profile", name, revision: connection.revision }),
+  preview: async (token: string): Promise<{ creatorName: string; role: Role }> => {
+    const { response, data } = await requestSpace({ op: "preview", token });
+    if (!response.ok) throw new Error(data.error ?? "This invitation cannot be opened.");
+    return data;
+  },
 };
 export function todayKey() {
-  return dateKey();
+  return dateKey(new Date(), state.space.timeZone);
 }

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { dateKey, recurrenceLabel, uid } from "@/lib/nocturne/logic";
-import { actions, useNocturne } from "@/lib/nocturne/store";
+import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 import type { Routine } from "@/lib/nocturne/types";
 import { RequestDialog } from "@/components/nocturne/RequestDialog";
 import {
@@ -130,10 +130,10 @@ function Editor({ r: init, onDone }: { r: Routine; onDone: () => void }) {
   return (
     <form
       className="space-y-4"
-      onSubmit={(e) => {
+      onSubmit={async (e) => {
         e.preventDefault();
         if (!valid) return;
-        if (actions.saveRoutine({ ...r, title: r.title.trim() }).ok) {
+        if ((await actions.saveRoutine({ ...r, title: r.title.trim() })).ok) {
           toast.success("Routine saved");
           onDone();
         }
@@ -210,7 +210,7 @@ function Editor({ r: init, onDone }: { r: Routine; onDone: () => void }) {
                     k === "daily"
                       ? { kind: "daily" }
                       : k === "once"
-                        ? { kind: "once", date: dateKey() }
+                        ? { kind: "once", date: dateKey(new Date(), s.space.timeZone) }
                         : { kind: "weekdays", days: [1, 2, 3, 4, 5] },
                 })
               }
@@ -328,8 +328,8 @@ function Editor({ r: init, onDone }: { r: Routine; onDone: () => void }) {
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction
-                  onClick={() => {
-                    if (actions.deleteRoutine(r.id).ok) {
+                  onClick={async () => {
+                    if ((await actions.deleteRoutine(r.id)).ok) {
                       toast("Routine removed");
                       onDone();
                     }

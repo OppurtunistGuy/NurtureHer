@@ -12,7 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { actions, useNocturne } from "@/lib/nocturne/store";
+import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 import type { Routine } from "@/lib/nocturne/types";
 
 export function SubmissionDialog({ routine, disabled }: { routine: Routine; disabled: boolean }) {
@@ -54,7 +54,7 @@ export function SubmissionDialog({ routine, disabled }: { routine: Routine; disa
           {proof === "challenge" && (
             <div className="rounded-md border p-3">
               <p className="text-xs text-muted-foreground">
-                Neutral one-time prompt · local demo · no camera or identity check
+                Neutral one-time prompt · no camera or identity check
               </p>
               {challenge && (
                 <p className="my-3 font-mono text-lg text-gold" aria-live="polite">
@@ -64,8 +64,8 @@ export function SubmissionDialog({ routine, disabled }: { routine: Routine; disa
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={() => {
-                  if (actions.generateChallenge(routine.id).ok) setNow(Date.now());
+                onClick={async () => {
+                  if ((await actions.generateChallenge(routine.id)).ok) setNow(Date.now());
                 }}
               >
                 {challenge ? "Replace prompt" : "Generate prompt"}
@@ -90,7 +90,10 @@ export function SubmissionDialog({ routine, disabled }: { routine: Routine; disa
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            Saved as readable text in this browser. Do not submit private or sensitive information.
+            {s.space.mode === "shared"
+              ? "Saved as readable text on the app server and shared with your partner."
+              : "Saved as readable text in this browser."}{" "}
+            Use example data while testing.
           </p>
           <DialogFooter>
             <Button
@@ -98,8 +101,8 @@ export function SubmissionDialog({ routine, disabled }: { routine: Routine; disa
                 (proof !== "confirmation" && !text.trim()) ||
                 (proof === "challenge" && (!challenge || remaining === 0))
               }
-              onClick={() => {
-                if (actions.submitProof(routine.id, text.trim(), challenge?.id).ok) {
+              onClick={async () => {
+                if ((await actions.submitProof(routine.id, text.trim(), challenge?.id)).ok) {
                   toast.success("Submitted for Master review");
                   setOpen(false);
                   setText("");

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { AppShell } from "@/components/nocturne/AppShell";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { actions, useNocturne } from "@/lib/nocturne/store";
+import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 
 export const Route = createFileRoute("/notes")({
   head: () => ({
@@ -49,10 +49,10 @@ function NotesPage() {
       </ul>
       <form
         className="mt-6 flex gap-2"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
           if (!text.trim()) return;
-          if (actions.sendMessage(text.trim()).ok) setText("");
+          if ((await actions.sendMessage(text.trim())).ok) setText("");
         }}
       >
         <Textarea
