@@ -18,7 +18,7 @@ concurrency:
 jobs:
   quality:
     name: Quality gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Check out the candidate
@@ -59,7 +59,10 @@ jobs:
       - name: Production build
         run: npm run build
       - name: Install test browser
-        run: npx playwright install --with-deps chromium
+        # The pinned hosted image already includes Chrome and its system libraries.
+        # Download the pinned Playwright browser without another apt upgrade.
+        timeout-minutes: 5
+        run: npx playwright install chromium
       - name: Two-browser create and join acceptance
         run: npm run test:e2e
       - name: Package the tested build
