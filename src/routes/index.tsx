@@ -29,15 +29,23 @@ function Onboarding() {
     navigate = useNavigate(),
     location = useLocation();
   const fromLink = new URLSearchParams(location.hash.replace(/^#/, "")).get("invite") ?? "";
-  const [mode, setMode] = useState<"create" | "join" | "demo">(fromLink ? "join" : "create");
+  // URL fragments never reach SSR. Hydrate the same first frame on both sides,
+  // then open the invite after mounting instead of mismatching the server HTML.
+  const [mode, setMode] = useState<"create" | "join" | "demo">("create");
   const [name, setName] = useState(""),
     [role, setRole] = useState<Role>("dom"),
     [adult, setAdult] = useState(false);
-  const [inviteText, setInviteText] = useState(fromLink),
+  const [inviteText, setInviteText] = useState(""),
     [error, setError] = useState("");
   const [preview, setPreview] = useState<{ creatorName: string; role: Role } | null>(null),
     [checking, setChecking] = useState(false);
   const token = invitationToken(inviteText);
+  useEffect(() => {
+    if (fromLink) {
+      setInviteText(fromLink);
+      setMode("join");
+    }
+  }, [fromLink]);
   useEffect(() => {
     if (s.onboarded && !fromLink && location.hash !== "setup" && mode !== "join")
       void navigate({ to: "/today", replace: true });

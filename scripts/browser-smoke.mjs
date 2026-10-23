@@ -56,7 +56,10 @@ try {
   const owner = await ownerContext.newPage(),
     guest = await guestContext.newPage();
   const errors = [];
-  for (const page of [owner, guest]) page.on("pageerror", (error) => errors.push(error.message));
+  for (const page of [owner, guest])
+    page.on("pageerror", (error) =>
+      errors.push(`${new URL(page.url()).pathname}: ${error.message}`),
+    );
   owner.setDefaultTimeout(15_000);
   guest.setDefaultTimeout(15_000);
   await owner.goto(origin);
