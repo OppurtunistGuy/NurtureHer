@@ -7,8 +7,9 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
-  // Shared spaces use a persistent SQLite file on a Node 24 host.
-  nitro: { preset: "node-server" },
+  // Vercel needs Build Output API functions, not the standalone Node output.
+  // Keep the persistent Node-host target for local development and other hosts.
+  nitro: { preset: process.env["VERCEL"] === "1" ? "vercel" : "node-server" },
   vite: {
     // Permit the specific internal QA host; do not disable Vite host checks.
     server: { allowedHosts: ["terminal.local"] },
