@@ -129,12 +129,21 @@ export async function draftRoutine(
   const parsedPrompt = z.string().trim().min(1).max(2000).safeParse(prompt);
   if (!parsedPrompt.success)
     throw new RoutineDraftError(400, "Describe a routine in 1–2,000 characters.");
-  const key = process.env["OPENAI_API_KEY"]?.trim();
-  const model = process.env["OPENAI_ROUTINE_MODEL"]?.trim();
-  if (!key || !model)
+  // Preserve an explicitly configured direct provider. Vercel deployments can
+  // instead authenticate to AI Gateway using their runtime OIDC identity.
+  const directKey = process.env["OPENAI_API_KEY"]?.trim();
+  const gatewayKey =
+    process.env["AI_GATEWAY_API_KEY"]?.trim() || process.env["VERCEL_OIDC_TOKEN"]?.trim();
+  const gateway = !directKey && !!gatewayKey;
+  const key = directKey || gatewayKey;
+  // Verified in the live Gateway catalog: fast text + structured output support.
+  const model = gateway
+    ? process.env["AI_GATEWAY_MODEL"]?.trim() || "openai/gpt-4.1-mini"
+    : process.env["OPENAI_ROUTINE_MODEL"]?.trim() || "gpt-4.1-mini";
+  if (!key)
     throw new RoutineDraftError(
       503,
-      "AI drafting is not configured. You can still create a routine manually.",
+      "AI drafting is not configured on this server. Enable Vercel AI Gateway with deployment OIDC, or add OPENAI_API_KEY in the server environment and redeploy. Never paste API keys into this app or chat.",
     );
 
   const controller = new AbortController();
@@ -154,32 +163,43 @@ export async function draftRoutine(
     return await Promise.race([
       timeout,
       (async () => {
-        const response = await fetcher("https://api.openai.com/v1/responses", {
-          method: "POST",
-          headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-          signal: controller.signal,
-          body: JSON.stringify({
-            model,
-            store: false,
-            max_output_tokens: 3000,
-            instructions:
-              "Draft one routine for human review, never execute or save it. Use only the user's request, not invented names or private context. Respect consent and safety; do not introduce punishments or mandatory intimate media. Use a same-day HH:mm window with end after start; dueTime must be null or inside that window. Weekdays are unique numbers 0 (Sunday) through 6; once requires a real YYYY-MM-DD date supplied by the user, otherwise use daily. Reminders are null or 0–240 minutes. Default proof is text; challenge is only a neutral written prompt and requires optInDaily true. No camera or media proof. Return JSON matching the schema. Keep instructions practical and under 500 characters.",
-            input: [{ role: "user", content: [{ type: "input_text", text: parsedPrompt.data }] }],
-            text: {
-              format: {
-                type: "json_schema",
-                name: "routine_draft",
-                strict: true,
-                schema: outputSchema,
+        const response = await fetcher(
+          gateway
+            ? "https://ai-gateway.vercel.sh/v1/responses"
+            : "https://api.openai.com/v1/responses",
+          {
+            method: "POST",
+            headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify({
+              model,
+              store: false,
+              max_output_tokens: 3000,
+              instructions:
+                "Draft one routine for human review, never execute or save it. Use only the user's request, not invented names or private context. Respect consent and safety; do not introduce punishments or mandatory intimate media. Use a same-day HH:mm window with end after start; dueTime must be null or inside that window. Weekdays are unique numbers 0 (Sunday) through 6; once requires a real YYYY-MM-DD date supplied by the user, otherwise use daily. Reminders are null or 0–240 minutes. Default proof is text; challenge is only a neutral written prompt and requires optInDaily true. No camera or media proof. Return JSON matching the schema. Keep instructions practical and under 500 characters.",
+              input: [{ role: "user", content: [{ type: "input_text", text: parsedPrompt.data }] }],
+              text: {
+                format: {
+                  type: "json_schema",
+                  name: "routine_draft",
+                  strict: true,
+                  schema: outputSchema,
+                },
               },
-            },
-          }),
-        });
+            }),
+          },
+        );
         if (!response.ok) {
           void response.body?.cancel().catch(() => {});
           throw new RoutineDraftError(
             502,
-            "AI drafting is unavailable. Try again later or create the routine manually.",
+            response.status === 401 || response.status === 403
+              ? "AI authentication or team access was rejected. Ask the app owner to check the server's AI credentials, Vercel OIDC and Gateway access, then redeploy."
+              : response.status === 402
+                ? "AI credits or the configured spending budget are exhausted. The app owner needs to check AI billing before drafting can continue."
+                : response.status === 429
+                  ? "AI drafting is rate limited. Wait a moment and try again."
+                  : "AI drafting is unavailable. Try again later or create the routine manually.",
           );
         }
         const envelope = providerSchema.parse(await readProvider(response));

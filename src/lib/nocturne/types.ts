@@ -175,6 +175,7 @@ export interface Prefs {
 }
 
 export interface AppState {
+  points?: import("./points").PointsState;
   version: 1 | 2;
   onboarded: boolean;
   myRole: Role;

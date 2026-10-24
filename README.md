@@ -1,4 +1,6 @@
-# Nocturne Together
+# BoundSome
+
+Android UAT client: see `android-client/README.md`. The APK connects to a running server; it does not contain the Node backend.
 
 A shared space for two, with separate pages for routines, goals, written check-ins, review, requests, notes and the supplied Master & Sub Agreement. The existing wine/ivory interface is retained.
 
@@ -106,3 +108,23 @@ npm run test:e2e
 The browser test starts the built Node server with a disposable database and uses isolated desktop/mobile sessions for creation, invitation, joining, reloads, profile updates, shared routines/notes, role restrictions, pause/discussion/resume and used-link rejection. Domain/API tests also cover concurrency, expired links, stale writes, persistence across repository restarts, cross-origin rejection and independent acknowledgements. See `QA.md` for results and `IMPLEMENTATION.md` for design boundaries.
 
 All changes go to `UAT` first, pass CI, then move through a `UAT` → `main` PR. See `RELEASE.md`. The existing published history and `AGENTS.md` rules are preserved.
+
+
+## Hosted shared spaces (Vercel)
+
+Vercel uses the remote primary libSQL/Turso database adapter. The local Node server can keep its existing SQLite file. Do not use a temporary SQLite file on Vercel: instances do not share it and it is not durable.
+
+1. Create a separate Turso/libSQL primary database for UAT. Keep production in another database.
+2. In the Vercel environment used by the UAT deployment, set server-only `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. Do not paste secrets into chat or commit them. The URL uses `libsql://` or HTTPS.
+3. Redeploy the UAT branch. Tables are created on first use; local data is not automatically transferred. Back up any existing local database before planning an import.
+4. Validate create → copy invite → join from a second browser, reload both, then test review and pause. The laptop can remain off.
+
+The remote adapter uses a request-local write transaction on the primary for each operation and commits before reporting success. It keeps membership, role checks, revision conflicts, one-use invitation redemption and Telegram receipts atomic across instances. It is deliberately conservative and serializes operations; this is not a high-concurrency capacity claim. Schema initialization is idempotent. Remote initialization never falls back to empty local or temporary storage. Missing hosted configuration returns an explicit setup error. Visitors without a session receive the normal onboarding state without opening the database.
+
+## AI drafting
+
+With no direct OpenAI key set, Vercel deployments can use `VERCEL_OIDC_TOKEN` with AI Gateway. Enable project OIDC and team Gateway access/credits, then redeploy. Other hosts can use `AI_GATEWAY_API_KEY` or direct `OPENAI_API_KEY`. Default models are `openai/gpt-4.1-mini` through Gateway and `gpt-4.1-mini` directly. Model overrides remain available through `AI_GATEWAY_MODEL` and `OPENAI_ROUTINE_MODEL`. Only the entered prompt is sent, and the Master reviews and saves the result. Live AI access and billing must be verified separately from provider-mocked tests.
+
+## Points
+
+The Points page records rewards and punishment points separately. The Master controls entries, level labels and milestones. The Sub can read and discuss the history. Resolving or reversing entries requires a reason and keeps the original record. Both agreement acknowledgements are required; pauses block all points changes. Nothing automatically punishes a missed task, a safety signal or withdrawal of consent.

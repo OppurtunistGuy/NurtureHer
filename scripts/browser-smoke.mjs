@@ -145,6 +145,27 @@ try {
   console.log(
     "PASS browser: independent agreement acknowledgements and shared-day submission/review across timezones",
   );
+  await owner.goto(`${origin}/points`);
+  await owner.getByLabel("Points (1–100)", { exact: true }).fill("50");
+  await owner
+    .getByLabel("Reason visible to both people", { exact: true })
+    .fill("Recognising reviewed effort");
+  await owner.getByRole("button", { name: "Record points", exact: true }).click();
+  await owner.getByText("+50 reward points", { exact: true }).waitFor();
+  await guest.goto(`${origin}/points`);
+  await guest.getByText("+50 reward points", { exact: true }).waitFor();
+  assert.equal(await guest.getByRole("button", { name: "Record points", exact: true }).count(), 0);
+  await owner.reload();
+  await owner.getByText("+50 reward points", { exact: true }).waitFor();
+  await owner.getByRole("button", { name: "Reverse entry", exact: true }).click();
+  await owner.getByLabel("Why reverse this entry?", { exact: true }).fill("Test correction");
+  await owner.getByRole("button", { name: "Confirm reversal", exact: true }).click();
+  await owner.getByText("Reversed", { exact: true }).waitFor();
+  await guest.reload();
+  await guest.getByText("Reversed", { exact: true }).waitFor();
+  console.log(
+    "PASS browser: shared points, Sub read-only access, persistence and audited reversal",
+  );
   await owner.goto(`${origin}/notes`);
   await owner
     .getByRole("textbox", { name: "Message", exact: true })

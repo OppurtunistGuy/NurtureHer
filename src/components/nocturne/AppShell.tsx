@@ -10,6 +10,7 @@ import {
   Inbox,
   ClipboardCheck,
   MoreHorizontal,
+  Award,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import {
@@ -34,13 +35,14 @@ const NAV = [
   { to: "/today", label: "Today", icon: Sun },
   { to: "/routines", label: "Routines", icon: CalendarClock },
   { to: "/goals", label: "Goals", icon: Target },
+  { to: "/points", label: "Points", icon: Award },
   { to: "/proof", label: "Proof review", icon: ClipboardCheck },
   { to: "/requests", label: "Requests", icon: Inbox },
   { to: "/notes", label: "Notes", icon: MessageSquare },
   { to: "/agreements", label: "Agreement", icon: BookOpen },
   { to: "/activity", label: "Activity", icon: History },
 ] as const;
-const MOBILE = [NAV[0], NAV[1], NAV[3], NAV[4]] as const;
+const MOBILE = [NAV[0], NAV[1], NAV[4], NAV[5]] as const;
 
 export function AppShell({
   title,
@@ -62,7 +64,15 @@ export function AppShell({
   if (!s.onboarded)
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
-        <h1 className="text-4xl">Nocturne Together</h1>
+        <h1>
+          <img
+            src="/branding/boundsome-logo.webp"
+            alt="BoundSome"
+            width="240"
+            height="120"
+            className="h-auto w-60 rounded-md"
+          />
+        </h1>
         <p className="text-sm text-muted-foreground">
           {connection.status === "checking"
             ? "Opening your space…"
@@ -77,11 +87,14 @@ export function AppShell({
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
-          <Link to="/today" className="font-display text-2xl tracking-wide text-ivory">
-            <span className="block leading-none">Nocturne</span>
-            <span className="mt-1 block font-sans text-[0.55rem] uppercase tracking-[0.3em] text-gold">
-              Together
-            </span>
+          <Link to="/today" aria-label="BoundSome home" className="shrink-0">
+            <img
+              src="/branding/boundsome-logo.webp"
+              alt="BoundSome"
+              width="144"
+              height="72"
+              className="h-auto w-36 rounded-md"
+            />
           </Link>
           <div className="flex items-center gap-2">
             <span className="hidden text-xs text-gold sm:inline">

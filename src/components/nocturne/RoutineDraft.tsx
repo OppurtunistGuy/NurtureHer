@@ -84,8 +84,9 @@ export function RoutineDraft({ onDraft }: { onDraft: (routine: Routine) => void 
       <summary className="cursor-pointer text-sm font-medium">Draft a routine with AI</summary>
       <div className="mt-4 space-y-3">
         <p className="text-xs leading-5 text-muted-foreground">
-          Only the description you submit is sent to OpenAI. Names, notes, your agreement, and media
-          are not attached. Review and edit the draft before saving it.
+          Only the description you submit is sent to the configured AI service (OpenAI directly, or
+          via Vercel AI Gateway). Names, notes, your agreement, and media are not attached. Review
+          and edit the draft before saving it.
         </p>
         {s.space.mode !== "shared" && (
           <p className="text-sm text-muted-foreground">Open a shared space to use AI drafting.</p>

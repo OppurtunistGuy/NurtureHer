@@ -16,7 +16,7 @@ import type { Role } from "@/lib/nocturne/types";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Create or join a space — Nocturne Together" },
+      { title: "Create or join a space — BoundSome" },
       { name: "referrer", content: "no-referrer" },
     ],
   }),
@@ -97,7 +97,15 @@ function Onboarding() {
     <div className="flex min-h-screen flex-col">
       <main className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-6 py-12">
         <p className="eyebrow text-center">A space for two</p>
-        <h1 className="mt-2 text-center text-5xl text-ivory">Nocturne Together</h1>
+        <h1 className="mt-4">
+          <img
+            src="/branding/boundsome-logo.webp"
+            alt="BoundSome"
+            width="1774"
+            height="887"
+            className="mx-auto h-auto w-full rounded-lg"
+          />
+        </h1>
         <p className="my-6 text-center text-sm leading-6 text-muted-foreground">
           Create your space. Share a link. Join each other.
         </p>

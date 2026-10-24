@@ -72,10 +72,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { name: "theme-color", content: "#1a1515" },
       { name: "robots", content: "noindex, nofollow" },
-      { title: "Nocturne — structured care for two" },
+      { title: "BoundSome — structured care for two" },
       {
         name: "description",
-        content: "Nocturne: a consent-first routine prototype for two adults. Local demo only.",
+        content: "BoundSome: a consent-first routine prototype for two adults. Local demo only.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

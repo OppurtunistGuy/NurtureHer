@@ -10,7 +10,7 @@ import type { Submission } from "@/lib/nocturne/types";
 import { TelegramProof } from "@/components/nocturne/TelegramProof";
 
 export const Route = createFileRoute("/proof")({
-  head: () => ({ meta: [{ title: "Proof review — Nocturne" }] }),
+  head: () => ({ meta: [{ title: "Proof review — BoundSome" }] }),
   component: ProofPage,
 });
 function ProofPage() {

@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
+import { pointsAwardSchema, pointsLevelsSchema } from "./points";
 import { createInitialState } from "./initial-state";
 import { savedStateSchema } from "./storage";
 import { transition, type Command } from "./engine";
@@ -13,7 +14,17 @@ import type { SpaceSnapshot } from "./space-protocol";
 import { TelegramProofStore, telegramConfigured } from "./telegram-proof.server";
 
 const id = z.string().min(1).max(100);
-const commandSchema = z.discriminatedUnion("type", [
+export const commandSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("points.award"), entry: pointsAwardSchema }).strict(),
+  z
+    .object({
+      type: z.literal("points.adjust"),
+      id,
+      action: z.enum(["resolve", "void"]),
+      note: z.string().trim().min(1).max(500),
+    })
+    .strict(),
+  z.object({ type: z.literal("points.levels"), levels: pointsLevelsSchema }).strict(),
   z
     .object({ type: z.literal("routine.save"), routine: savedStateSchema.shape.routines.element })
     .strict(),
@@ -96,7 +107,7 @@ const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("agreement.resolve"), id, accept: z.boolean() }).strict(),
   z.object({ type: z.literal("prefs"), patch: savedStateSchema.shape.prefs.partial() }).strict(),
 ]);
-const bodySchema = savedStateSchema.extend({
+export const bodySchema = savedStateSchema.extend({
   challenge: z
     .object({
       id: z.string(),

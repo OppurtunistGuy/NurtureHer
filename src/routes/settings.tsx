@@ -21,7 +21,7 @@ import {
 import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 
 export const Route = createFileRoute("/settings")({
-  head: () => ({ meta: [{ title: "Settings — Nocturne" }] }),
+  head: () => ({ meta: [{ title: "Settings — BoundSome" }] }),
   component: SettingsPage,
 });
 function SettingsPage() {

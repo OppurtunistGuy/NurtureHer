@@ -4,7 +4,7 @@ import { dateKey } from "./logic";
 export const AGREEMENT_VERSION = "master-sub-2026-10-23-v1";
 
 // User-supplied wording. Keep this verbatim; negotiated additions are separate.
-export const AGREEMENT_MARKDOWN = `# NOCTURNE TOGETHER
+export const AGREEMENT_MARKDOWN = `# BoundSome
 
 ## Master & Sub Agreement
 
@@ -128,6 +128,23 @@ export function createAgreement(today: string): Agreement {
 /** Adopt the supplied agreement exactly once. A paused dynamic must discuss and
  * resume before any agreement change; the pending update is applied afterward. */
 export function upgradeAgreement(state: AppState, now: Date): AppState {
+  // A product-name change is not a change to agreed terms. Preserve signatures,
+  // proposals, history and pause state when only the legacy heading differs.
+  const document = state.agreement.document;
+  if (
+    document?.version === AGREEMENT_VERSION &&
+    document.markdown.replace(/^# NOCTURNE TOGETHER(?=\r?\n)/, "# BoundSome") === AGREEMENT_MARKDOWN
+  ) {
+    return document.markdown === AGREEMENT_MARKDOWN
+      ? state
+      : {
+          ...state,
+          agreement: {
+            ...state.agreement,
+            document: { ...document, markdown: AGREEMENT_MARKDOWN },
+          },
+        };
+  }
   if (
     state.agreement.document?.version === AGREEMENT_VERSION &&
     state.agreement.document.markdown === AGREEMENT_MARKDOWN
