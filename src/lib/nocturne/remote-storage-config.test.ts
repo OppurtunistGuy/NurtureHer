@@ -2,6 +2,14 @@ import { describe, expect, it } from "vitest";
 import { remoteStorageConfig } from "./remote-storage-config.server";
 
 describe("Turso environment configuration", () => {
+  it("accepts the canonical URL with the integration-prefixed token", () => {
+    expect(
+      remoteStorageConfig({
+        TURSO_DATABASE_URL: "libsql://uat.example",
+        TURSO_DATABASE_TURSO_AUTH_TOKEN: "test-token",
+      }),
+    ).toEqual({ url: "libsql://uat.example", authToken: "test-token" });
+  });
   it("accepts the existing Marketplace prefix without renaming secrets", () => {
     expect(
       remoteStorageConfig({
