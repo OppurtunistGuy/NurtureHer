@@ -9,7 +9,7 @@ import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 export const Route = createFileRoute("/agreements")({
   head: () => ({
     meta: [
-      { title: "Master & Sub Agreement — Nocturne Together" },
+      { title: "Master & Sub Agreement — BoundSome" },
       {
         name: "description",
         content: "Our agreed structure, boundaries, safety signals, privacy and review.",
@@ -42,7 +42,7 @@ function AgreementsPage() {
       .join("\n\n") ??
     "Your current terms remain in place until discussion and mutual readiness allow the pending agreement update.";
   return (
-    <AppShell eyebrow="Our shared understanding" title="Nocturne Together">
+    <AppShell eyebrow="Our shared understanding" title="BoundSome">
       <h2 className="text-2xl">Master &amp; Sub Agreement</h2>
       {s.agreementUpdatePending && (
         <p role="status" className="my-5 rounded-md border border-gold/40 p-4 text-sm">

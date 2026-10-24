@@ -8,9 +8,9 @@ import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 export const Route = createFileRoute("/notes")({
   head: () => ({
     meta: [
-      { title: "Notes — Nocturne" },
+      { title: "Notes — BoundSome" },
       { name: "description", content: "Private text notes between partners." },
-      { property: "og:title", content: "Notes — Nocturne" },
+      { property: "og:title", content: "Notes — BoundSome" },
       { property: "og:description", content: "Private text notes." },
     ],
   }),

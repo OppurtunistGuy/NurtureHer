@@ -6,6 +6,7 @@ import { readStoredState } from "./storage";
 import { upgradeAgreement } from "./agreement-document";
 import type { AppState, Goal, PartnerRequest, Role, Routine, Submission } from "./types";
 import type { SpaceSnapshot } from "./space-protocol";
+import type { PointsAward, PointsLevel } from "./points";
 
 const KEY = "nocturne.demo.v1";
 export { createInitialState } from "./initial-state";
@@ -137,6 +138,10 @@ function dispatch(command: Command): ActionResult {
 
 function makeActions<T>(dispatch: (command: Command) => T) {
   return {
+    awardPoints: (entry: PointsAward) => dispatch({ type: "points.award", entry }),
+    adjustPoints: (id: string, action: "resolve" | "void", note: string) =>
+      dispatch({ type: "points.adjust", id, action, note }),
+    savePointLevels: (levels: PointsLevel[]) => dispatch({ type: "points.levels", levels }),
     onboard: (role: Role, name: string, partner: string) =>
       dispatch({ type: "onboard", role, name, partner }),
     setView: (role: Role) => dispatch({ type: "view", role }),

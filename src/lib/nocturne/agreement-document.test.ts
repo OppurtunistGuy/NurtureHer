@@ -27,6 +27,25 @@ function legacy() {
   };
 }
 describe("supplied Master & Sub Agreement", () => {
+  it.each([false, true])(
+    "preserves agreed terms and acknowledgements during rebranding (paused=%s)",
+    (paused) => {
+      const state = createInitialState();
+      state.agreement.document!.markdown = AGREEMENT_MARKDOWN.replace(
+        /^# BoundSome/,
+        "# NOCTURNE TOGETHER",
+      );
+      state.agreement.ack = { dom: stamp, sub: stamp };
+      state.pause.active = paused;
+      const next = upgradeAgreement(state, now);
+      expect(next.agreement.document?.markdown).toBe(AGREEMENT_MARKDOWN);
+      expect(next.agreement.ack).toEqual(state.agreement.ack);
+      expect(next.agreement.history).toEqual(state.agreement.history);
+      expect(next.pause).toEqual(state.pause);
+      expect(next.activity).toEqual(state.activity);
+      expect(next.routines).toEqual(state.routines);
+    },
+  );
   it("installs the full text, exact hard limits, safety signals and pending acknowledgements", () => {
     const s = createInitialState();
     expect(s.agreement.document).toEqual({

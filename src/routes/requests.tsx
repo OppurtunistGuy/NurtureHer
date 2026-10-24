@@ -10,7 +10,7 @@ import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 import type { PartnerRequest } from "@/lib/nocturne/types";
 
 export const Route = createFileRoute("/requests")({
-  head: () => ({ meta: [{ title: "Requests — Nocturne" }] }),
+  head: () => ({ meta: [{ title: "Requests — BoundSome" }] }),
   component: RequestsPage,
 });
 function RequestsPage() {

@@ -12,7 +12,7 @@ import { agreementReady } from "@/lib/nocturne/engine";
 import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 
 export const Route = createFileRoute("/today")({
-  head: () => ({ meta: [{ title: "Today — Nocturne" }] }),
+  head: () => ({ meta: [{ title: "Today — BoundSome" }] }),
   component: TodayPage,
 });
 function TodayPage() {

@@ -27,9 +27,9 @@ import {
 export const Route = createFileRoute("/routines")({
   head: () => ({
     meta: [
-      { title: "Routines — Nocturne" },
+      { title: "Routines — BoundSome" },
       { name: "description", content: "Build and edit recurring routines together." },
-      { property: "og:title", content: "Routines — Nocturne" },
+      { property: "og:title", content: "Routines — BoundSome" },
       { property: "og:description", content: "Recurring routine builder." },
     ],
   }),

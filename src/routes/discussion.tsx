@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 
 export const Route = createFileRoute("/discussion")({
-  head: () => ({ meta: [{ title: "Pause discussion — Nocturne" }] }),
+  head: () => ({ meta: [{ title: "Pause discussion — BoundSome" }] }),
   component: DiscussionPage,
 });
 function DiscussionPage() {

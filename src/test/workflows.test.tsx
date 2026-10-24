@@ -13,6 +13,7 @@ import { Route as index } from "@/routes/index";
 import { Route as today } from "@/routes/today";
 import { Route as routines } from "@/routes/routines";
 import { Route as goals } from "@/routes/goals";
+import { Route as points } from "@/routes/points";
 import { Route as proof } from "@/routes/proof";
 import { Route as requests } from "@/routes/requests";
 import { Route as notes } from "@/routes/notes";
@@ -42,6 +43,7 @@ describe("rendered app workflow", () => {
       ["/today", today],
       ["/routines", routines],
       ["/goals", goals],
+      ["/points", points],
       ["/proof", proof],
       ["/requests", requests],
       ["/notes", notes],
@@ -69,7 +71,7 @@ describe("rendered app workflow", () => {
     const fill = (label: string, value: string) =>
       fireEvent.change(screen.getByLabelText(label), { target: { value } });
     render(<RouterProvider router={router} />);
-    await screen.findByRole("heading", { name: "Nocturne Together" });
+    await screen.findByRole("heading", { name: "BoundSome" });
     expect(screen.getByRole("button", { name: "Create my space" })).toBeDisabled();
     await click(screen.getByRole("button", { name: "Try alone first" }));
     await click(screen.getByRole("checkbox"));
@@ -110,6 +112,20 @@ describe("rendered app workflow", () => {
     await click(screen.getByRole("button", { name: "History" }));
     expect(screen.getByText("Water, breakfast, and ready for the day.")).toBeInTheDocument();
 
+    await go("/points");
+    await screen.findByRole("heading", { name: "Points & milestones" });
+    fill("Points (1–100)", "50");
+    fill("Reason visible to both people", "Reviewed effort this week");
+    await click(screen.getByRole("button", { name: "Record points" }));
+    await screen.findByText("+50 reward points");
+    expect(screen.getByRole("progressbar")).toHaveAttribute("value", "0");
+    await go("/settings");
+    await click(screen.getByRole("radio", { name: /Sub/ }));
+    await go("/points");
+    expect(screen.queryByRole("button", { name: "Record points" })).not.toBeInTheDocument();
+    expect(screen.getByText("+50 reward points")).toBeInTheDocument();
+    await go("/settings");
+    await click(screen.getByRole("radio", { name: /Master/ }));
     await go("/goals");
     await click(screen.getByRole("button", { name: "New goal" }));
     fill("Goal title", "A focused week");

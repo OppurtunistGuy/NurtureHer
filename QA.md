@@ -1,3 +1,22 @@
+# Shared-storage debug candidate — 24 October 2026
+
+179 automated tests pass, including eight real libSQL driver tests using two independent clients against a disposable database. These test persistence, atomic invitation redemption, permissions, stale revisions, pause handling, committed HTTP responses, explicit Vercel configuration errors and two-party Telegram receipts. Existing local SQLite tests remain green. These are not a live Turso connectivity or hosted load test.
+
+Vercel team access and hosted database setup remain pending. No production release is authorized by passing local checks alone.
+
+# BoundSome branding and Android UAT — 24 October 2026
+
+- Uploaded logo used for onboarding, navigation, browser icon and Android branding.
+- 149 web tests pass, including two regressions preserving agreement acknowledgements and pauses when the product heading changes.
+- Type-check and production build pass; all 11 server-rendered routes pass.
+- Lint: zero errors, seven existing Fast Refresh warnings.
+- Android: 23 server-address checks pass; APK compiles and its v2/v3 signatures verify. Android manifest identifies the app as BoundSome, min API 26, target API 35.
+- Physical Android installation, WebView layout and end-to-end phone testing remain unverified: no device is connected.
+- Server deployment remains unconfigured; shared spaces need a reachable running backend.
+- Internal database paths, cookie/storage identifiers and Android package ID remain stable to preserve existing sessions and data. The product heading changes without renegotiating agreement terms.
+
+---
+
 # Validation report — relationships, AI drafts and Telegram receipts
 
 Date: 23 October 2026. Local environment: Node 24.19.0 / npm 11.9.0.

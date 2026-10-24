@@ -67,6 +67,63 @@ async function pair(creatorRole: Role = "dom") {
   await creator.request();
   return { creator, partner, token };
 }
+describe("points API across independent sessions", () => {
+  it("persists shared points, prevents role spoofing and keeps other spaces separate", async () => {
+    const { creator, partner } = await pair();
+    const command = {
+      type: "points.award",
+      entry: {
+        id: "reviewed-reward",
+        kind: "reward",
+        amount: 50,
+        reason: "Reviewed weekly progress",
+      },
+    };
+    expect((await creator.command(command)).response.status).toBe(400);
+    await creator.command({ type: "agreement.ack" });
+    await partner.request();
+    await partner.command({ type: "agreement.ack" });
+    await creator.request();
+    expect((await creator.command(command)).response.status).toBe(200);
+    const result = await partner.request();
+    expect(result.value.state.points.ledger[0]).toMatchObject({
+      id: "reviewed-reward",
+      amount: 50,
+      by: "dom",
+    });
+    expect(
+      (await partner.command({ ...command, entry: { ...command.entry, id: "forged" } })).response
+        .status,
+    ).toBe(400);
+    expect((await creator.command(command)).response.status).toBe(400);
+    const other = new BrowserSession();
+    await other.create("Other Master");
+    expect(other.snapshot.state.points?.ledger).toEqual([]);
+    expect(
+      (
+        await other.request({
+          op: "command",
+          spaceId: creator.snapshot.state.space.id,
+          revision: creator.snapshot.revision,
+          command,
+        })
+      ).response.status,
+    ).toBe(403);
+    await partner.request();
+    await partner.command({ type: "pause", signal: "RED", reason: "Check in" });
+    await creator.request();
+    expect(
+      (await creator.command({ ...command, entry: { ...command.entry, id: "paused" } })).response
+        .status,
+    ).toBe(400);
+    db.close();
+    db = new SpaceRepository(join(directory, "spaces.sqlite"), () => clock);
+    await creator.request();
+    expect(creator.snapshot.state.points?.ledger).toHaveLength(1);
+    expect(creator.snapshot.state.pause.active).toBe(true);
+  });
+});
+
 const routine: Routine = {
   id: "check-in",
   title: "Daily check-in",

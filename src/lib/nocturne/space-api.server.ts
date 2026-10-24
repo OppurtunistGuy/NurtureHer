@@ -2,6 +2,7 @@ import { z } from "zod";
 import { SpaceError, SpaceRepository, SESSION_SECONDS } from "./space-repository.server";
 import { RoutineDraftError } from "./routine-drafting.server";
 import { timingSafeEqual } from "node:crypto";
+import { connectRemoteStorage, type SpaceStorage } from "./remote-storage.server";
 
 const name = z.string().trim().min(1, "Enter your name.").max(40),
   token = z.string().regex(/^[a-f0-9]{64}$/),
@@ -50,8 +51,24 @@ const requestSchema = z.discriminatedUnion("op", [
     .strict(),
 ]);
 const COOKIE = "nocturne_member";
-let repository: SpaceRepository | undefined;
+let repository: SpaceStorage | undefined;
 function getRepository() {
+  if (repository) return repository;
+  if (
+    (process.env["TURSO_DATABASE_URL"] || process.env["TURSO_AUTH_TOKEN"]) &&
+    (!process.env["TURSO_DATABASE_URL"]?.trim() || !process.env["TURSO_AUTH_TOKEN"]?.trim())
+  )
+    throw new SpaceError(
+      503,
+      "Remote storage setup is incomplete. The app owner must set both TURSO_DATABASE_URL and TURSO_AUTH_TOKEN for this deployment, then redeploy.",
+    );
+  if (process.env["TURSO_DATABASE_URL"] || process.env["TURSO_AUTH_TOKEN"])
+    return (repository = connectRemoteStorage());
+  if (process.env["VERCEL"] === "1")
+    throw new SpaceError(
+      503,
+      "Shared spaces are not configured on this server. The app owner must connect a persistent database, set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN, and redeploy. Your laptop does not need to stay on.",
+    );
   return (repository ??= new SpaceRepository(
     process.env["NOCTURNE_DB_PATH"] ?? "data/nocturne.sqlite",
   ));
@@ -83,7 +100,7 @@ async function readBody(request: Request) {
 }
 export async function handleSpaceRequest(
   request: Request,
-  suppliedRepository?: SpaceRepository,
+  suppliedRepository?: SpaceStorage,
 ): Promise<Response> {
   const headers = new Headers({
     "content-type": "application/json",
@@ -105,35 +122,40 @@ export async function handleSpaceRequest(
       return json({ error: "Method not allowed." }, 405);
     if (request.method === "POST" && request.headers.get("origin") !== new URL(request.url).origin)
       throw new SpaceError(403, "Open this page on the same site before making changes.");
+    if (request.method === "GET" && !session)
+      throw new SpaceError(
+        401,
+        "No active space on this browser. Open an invitation or create a space.",
+      );
     const db = suppliedRepository ?? getRepository();
     if (request.method === "GET")
       return json(
-        db.read(
+        await db.read(
           session,
           spaceId.parse(new URL(request.url).searchParams.get("space") ?? undefined),
         ),
       );
     const input = await readBody(request);
     if (input.op === "telegram.open")
-      return json(db.openTelegram(session, input.spaceId, input.routineId));
+      return json(await db.openTelegram(session, input.spaceId, input.routineId));
     if (input.op === "draft") {
-      const snapshot = db.read(session, input.spaceId);
+      const snapshot = await db.read(session, input.spaceId);
       if (snapshot.state.myRole !== "dom")
         throw new SpaceError(403, "Only the Master can draft assigned routines.");
       if (snapshot.state.pause.active)
         throw new SpaceError(423, "Paused: routine drafting is locked.");
       const { draftRoutine } = await import("./routine-drafting.server");
       const routine = await draftRoutine(input.prompt);
-      if (db.read(session, input.spaceId).state.pause.active)
+      if ((await db.read(session, input.spaceId)).state.pause.active)
         throw new SpaceError(423, "Paused: routine drafting is locked.");
       return json({ routine });
     }
-    if (input.op === "preview") return json(db.preview(input.token));
+    if (input.op === "preview") return json(await db.preview(input.token));
     if (input.op === "create" || input.op === "join") {
       const result =
         input.op === "create"
-          ? db.create(input.name, input.role, session, input.timeZone)
-          : db.join(input.token, input.name, session);
+          ? await db.create(input.name, input.role, session, input.timeZone)
+          : await db.join(input.token, input.name, session);
       headers.set(
         "set-cookie",
         `${COOKIE}=${result.token}; Path=/api/space; HttpOnly; SameSite=Strict; Max-Age=${SESSION_SECONDS}${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`,
@@ -141,7 +163,7 @@ export async function handleSpaceRequest(
       return json(result.snapshot, 201);
     }
     return json(
-      db.change(
+      await db.change(
         session,
         input.revision,
         input.op === "command"
@@ -173,10 +195,7 @@ export async function handleSpaceRequest(
 }
 
 /** Telegram sends authenticated updates here; media payloads are never persisted. */
-export async function handleTelegramRequest(
-  request: Request,
-  suppliedRepository?: SpaceRepository,
-) {
+export async function handleTelegramRequest(request: Request, suppliedRepository?: SpaceStorage) {
   const json = (data: unknown, status = 200) =>
     new Response(JSON.stringify(data), {
       status,
@@ -232,7 +251,7 @@ export async function handleTelegramRequest(
       return json({ ok: true });
     let text: string;
     try {
-      text = (suppliedRepository ?? getRepository()).telegramUpdate(
+      text = await (suppliedRepository ?? getRepository()).telegramUpdate(
         update.update_id,
         String(message.from.id),
         message.text || message.caption || "",

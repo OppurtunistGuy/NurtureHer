@@ -35,6 +35,7 @@ try {
     "/today",
     "/routines",
     "/goals",
+    "/points",
     "/proof",
     "/requests",
     "/notes",
@@ -46,7 +47,7 @@ try {
     const response = await fetch(`http://127.0.0.1:4178${path}`);
     const html = await response.text();
     assert.equal(response.status, 200, `${path}: ${html.slice(0, 250)}`);
-    assert.ok(html.includes("Nocturne"), `${path}: missing app markup`);
+    assert.ok(html.includes("BoundSome"), `${path}: missing app markup`);
     assert.ok(!html.includes("fonts.googleapis.com"), `${path}: unexpected external font request`);
     console.log(`PASS SSR ${path} (200)`);
   }

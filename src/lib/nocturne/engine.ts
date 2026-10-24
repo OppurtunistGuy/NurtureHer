@@ -1,7 +1,17 @@
 import { dateKey, minutesOf, occursOn, taskKey } from "./logic";
 import type { AppState, Goal, PartnerRequest, Role, Routine, Submission } from "./types";
+import {
+  DEFAULT_LEVELS,
+  pointsAwardSchema,
+  pointsLevelsSchema,
+  type PointsAward,
+  type PointsLevel,
+} from "./points";
 
 export type Command =
+  | { type: "points.award"; entry: PointsAward }
+  | { type: "points.adjust"; id: string; action: "resolve" | "void"; note: string }
+  | { type: "points.levels"; levels: PointsLevel[] }
   | { type: "onboard"; role: Role; name: string; partner: string }
   | { type: "view"; role: Role }
   | { type: "invite"; code: string }
@@ -37,6 +47,9 @@ export interface Context {
 // Allowlist, not a blacklist: future commands are locked by default during pause.
 const duringPause: Command["type"][] = ["view", "message", "resume"];
 const commander: Command["type"][] = [
+  "points.award",
+  "points.adjust",
+  "points.levels",
   "routine.save",
   "routine.delete",
   "goal.save",
@@ -121,6 +134,11 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
     requireThat(s.onboarded, "Set up the demo first.");
   if (["submission", "challenge", "task.prepare"].includes(cmd.type))
     requireThat(agreementReady(s), "Both people must acknowledge the agreement first.");
+  if (cmd.type.startsWith("points."))
+    requireThat(
+      agreementReady(s),
+      "Both people must acknowledge the agreement before recording points.",
+    );
   const routine = (id: string) => {
     const r = s.routines.find((x) => x.id === id);
     requireThat(r, "Routine no longer exists.");
@@ -132,6 +150,68 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
     return r;
   };
   switch (cmd.type) {
+    case "points.award": {
+      const entry = pointsAwardSchema.parse(cmd.entry);
+      const points = s.points ?? { ledger: [], levels: DEFAULT_LEVELS };
+      requireThat(
+        !points.ledger.some((item) => item.id === entry.id),
+        "This points entry was already recorded.",
+      );
+      if (entry.submissionId) {
+        requireThat(entry.kind === "reward", "Only rewards may link to an accepted check-in.");
+        requireThat(
+          s.submissions?.some(
+            (item) => item.id === entry.submissionId && item.status === "accepted",
+          ),
+          "Select an accepted check-in from this space.",
+        );
+        requireThat(
+          !points.ledger.some((item) => item.submissionId === entry.submissionId && !item.voidedAt),
+          "That check-in already has a reward.",
+        );
+      }
+      return log(
+        { ...s, points: { ...points, ledger: [{ ...entry, at, by: "dom" }, ...points.ledger] } },
+        `Recorded ${entry.amount} ${entry.kind} points: ${entry.reason}`,
+      );
+    }
+    case "points.adjust": {
+      nonempty(cmd.note, 500);
+      const points = s.points ?? { ledger: [], levels: DEFAULT_LEVELS };
+      const entry = points.ledger.find((item) => item.id === cmd.id);
+      requireThat(entry && !entry.voidedAt, "This entry is unavailable or already reversed.");
+      requireThat(cmd.action === "void" || cmd.action === "resolve", "Choose resolve or reverse.");
+      requireThat(
+        cmd.action !== "resolve" || (entry.kind === "punishment" && !entry.resolvedAt),
+        "Only outstanding punishment points can be resolved.",
+      );
+      return log(
+        {
+          ...s,
+          points: {
+            ...points,
+            ledger: points.ledger.map((item) =>
+              item.id !== cmd.id
+                ? item
+                : {
+                    ...item,
+                    ...(cmd.action === "void"
+                      ? { voidedAt: at, voidReason: cmd.note.trim() }
+                      : { resolvedAt: at, resolution: cmd.note.trim() }),
+                  },
+            ),
+          },
+        },
+        `${cmd.action === "void" ? "Reversed" : "Resolved"} points entry: ${cmd.note.trim()}`,
+      );
+    }
+    case "points.levels": {
+      const levels = pointsLevelsSchema.parse(cmd.levels);
+      return log(
+        { ...s, points: { ledger: s.points?.ledger ?? [], levels } },
+        "Updated reward level labels and milestone thresholds.",
+      );
+    }
     case "view":
       return { ...s, viewRole: cmd.role, challenge: undefined };
     case "onboard": {

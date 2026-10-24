@@ -1,4 +1,5 @@
 import { dateKey, randomInviteCode, uid } from "./logic";
+import { DEFAULT_LEVELS } from "./points";
 import { createAgreement } from "./agreement-document";
 import type { AppState, Routine } from "./types";
 
@@ -64,6 +65,7 @@ export function createInitialState(): AppState {
       r("Evening reflection", "22:00", "22:45", "One line about your day, then rest."),
     ],
     tasks: {},
+    points: { ledger: [], levels: DEFAULT_LEVELS.map((level) => ({ ...level })) },
     requests: [],
     goals: [],
     submissions: [],

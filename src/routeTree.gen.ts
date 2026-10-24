@@ -15,6 +15,7 @@ import { Route as AgreementsRouteImport } from './routes/agreements'
 import { Route as DiscussionRouteImport } from './routes/discussion'
 import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as NotesRouteImport } from './routes/notes'
+import { Route as PointsRouteImport } from './routes/points'
 import { Route as ProofRouteImport } from './routes/proof'
 import { Route as RequestsRouteImport } from './routes/requests'
 import { Route as RoutinesRouteImport } from './routes/routines'
@@ -51,6 +52,11 @@ const GoalsRoute = GoalsRouteImport.update({
 const NotesRoute = NotesRouteImport.update({
   id: '/notes',
   path: '/notes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PointsRoute = PointsRouteImport.update({
+  id: '/points',
+  path: '/points',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProofRoute = ProofRouteImport.update({
@@ -96,6 +102,7 @@ export interface FileRoutesByFullPath {
   '/discussion': typeof DiscussionRoute
   '/goals': typeof GoalsRoute
   '/notes': typeof NotesRoute
+  '/points': typeof PointsRoute
   '/proof': typeof ProofRoute
   '/requests': typeof RequestsRoute
   '/routines': typeof RoutinesRoute
@@ -111,6 +118,7 @@ export interface FileRoutesByTo {
   '/discussion': typeof DiscussionRoute
   '/goals': typeof GoalsRoute
   '/notes': typeof NotesRoute
+  '/points': typeof PointsRoute
   '/proof': typeof ProofRoute
   '/requests': typeof RequestsRoute
   '/routines': typeof RoutinesRoute
@@ -127,6 +135,7 @@ export interface FileRoutesById {
   '/discussion': typeof DiscussionRoute
   '/goals': typeof GoalsRoute
   '/notes': typeof NotesRoute
+  '/points': typeof PointsRoute
   '/proof': typeof ProofRoute
   '/requests': typeof RequestsRoute
   '/routines': typeof RoutinesRoute
@@ -144,6 +153,7 @@ export interface FileRouteTypes {
     | '/discussion'
     | '/goals'
     | '/notes'
+    | '/points'
     | '/proof'
     | '/requests'
     | '/routines'
@@ -159,6 +169,7 @@ export interface FileRouteTypes {
     | '/discussion'
     | '/goals'
     | '/notes'
+    | '/points'
     | '/proof'
     | '/requests'
     | '/routines'
@@ -174,6 +185,7 @@ export interface FileRouteTypes {
     | '/discussion'
     | '/goals'
     | '/notes'
+    | '/points'
     | '/proof'
     | '/requests'
     | '/routines'
@@ -190,6 +202,7 @@ export interface RootRouteChildren {
   DiscussionRoute: typeof DiscussionRoute
   GoalsRoute: typeof GoalsRoute
   NotesRoute: typeof NotesRoute
+  PointsRoute: typeof PointsRoute
   ProofRoute: typeof ProofRoute
   RequestsRoute: typeof RequestsRoute
   RoutinesRoute: typeof RoutinesRoute
@@ -240,6 +253,13 @@ declare module '@tanstack/react-router' {
       path: '/notes'
       fullPath: '/notes'
       preLoaderRoute: typeof NotesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/points': {
+      id: '/points'
+      path: '/points'
+      fullPath: '/points'
+      preLoaderRoute: typeof PointsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/proof': {
@@ -313,6 +333,7 @@ const rootRouteChildren: RootRouteChildren = {
   DiscussionRoute: DiscussionRoute,
   GoalsRoute: GoalsRoute,
   NotesRoute: NotesRoute,
+  PointsRoute: PointsRoute,
   ProofRoute: ProofRoute,
   RequestsRoute: RequestsRoute,
   RoutinesRoute: RoutinesRoute,

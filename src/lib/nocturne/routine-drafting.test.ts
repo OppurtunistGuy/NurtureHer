@@ -28,6 +28,9 @@ function provider(draft: unknown = valid) {
 beforeEach(() => {
   vi.stubEnv("OPENAI_API_KEY", "server-test-key");
   vi.stubEnv("OPENAI_ROUTINE_MODEL", "configured-test-model");
+  vi.stubEnv("AI_GATEWAY_API_KEY", "");
+  vi.stubEnv("VERCEL_OIDC_TOKEN", "");
+  vi.stubEnv("AI_GATEWAY_MODEL", "");
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -74,7 +77,7 @@ describe("AI routine drafting sidecar", () => {
     expect(result.recurrence).toEqual({ kind: "once", date: "2027-02-28" });
   });
 
-  it.each(["OPENAI_API_KEY", "OPENAI_ROUTINE_MODEL"])(
+  it.each(["OPENAI_API_KEY"])(
     "fails clearly without %s and never calls the provider",
     async (variable) => {
       vi.stubEnv(variable, "");
@@ -83,6 +86,41 @@ describe("AI routine drafting sidecar", () => {
       expect(fetcher).not.toHaveBeenCalled();
     },
   );
+  it("uses a default model when the direct key exists but the model was omitted", async () => {
+    vi.stubEnv("OPENAI_ROUTINE_MODEL", "");
+    const fetcher = provider();
+    await draftRoutine("Study", fetcher);
+    expect(JSON.parse(fetcher.mock.calls[0]![1]!.body as string).model).toBe("gpt-4.1-mini");
+  });
+  it.each(["VERCEL_OIDC_TOKEN", "AI_GATEWAY_API_KEY"])(
+    "uses Gateway authentication via %s without a provider key",
+    async (variable) => {
+      vi.stubEnv("OPENAI_API_KEY", "");
+      vi.stubEnv(variable, "private-gateway-credential");
+      const fetcher = provider();
+      await draftRoutine("Study", fetcher);
+      expect(fetcher.mock.calls[0]![0]).toBe("https://ai-gateway.vercel.sh/v1/responses");
+      const request = fetcher.mock.calls[0]![1]!;
+      expect((request.headers as Record<string, string>)["authorization"]).toBe(
+        "Bearer private-gateway-credential",
+      );
+      expect(JSON.parse(request.body as string).model).toBe("openai/gpt-4.1-mini");
+      expect(request.body).not.toContain("private-gateway-credential");
+    },
+  );
+  it.each([
+    [402, "credits"],
+    [429, "rate limited"],
+    [403, "access"],
+  ] as const)("gives an actionable provider %s error", async (status, message) => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("private-upstream-error", { status }));
+    await expect(draftRoutine("Study", fetcher)).rejects.toMatchObject({
+      status: 502,
+      message: expect.stringContaining(message),
+    });
+  });
 
   it.each(["", "  ", "a".repeat(2001)])(
     "rejects an empty or oversized submitted prompt before requesting AI",

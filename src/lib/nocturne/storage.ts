@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { AppState } from "./types";
 import { uid } from "./logic";
 import { upgradeAgreement } from "./agreement-document";
+import { pointsStateSchema, DEFAULT_LEVELS } from "./points";
 
 const role = z.enum(["dom", "sub"]),
   stamp = z.string(),
@@ -24,6 +25,7 @@ const recurrence = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("once"), date: z.string() }),
 ]);
 export const savedStateSchema = z.object({
+  points: pointsStateSchema.default({ ledger: [], levels: DEFAULT_LEVELS }),
   version: z.union([z.literal(1), z.literal(2)]),
   onboarded: z.boolean(),
   myRole: role,
@@ -54,6 +56,7 @@ export const savedStateSchema = z.object({
     }),
   ),
   tasks: z.record(
+    z.string(),
     z.object({
       status,
       note: z.string().optional(),

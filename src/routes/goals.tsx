@@ -12,7 +12,7 @@ import { dateKey, uid } from "@/lib/nocturne/logic";
 import type { Goal } from "@/lib/nocturne/types";
 
 export const Route = createFileRoute("/goals")({
-  head: () => ({ meta: [{ title: "Goals — Nocturne" }] }),
+  head: () => ({ meta: [{ title: "Goals — BoundSome" }] }),
   component: GoalsPage,
 });
 const CATEGORIES = {
