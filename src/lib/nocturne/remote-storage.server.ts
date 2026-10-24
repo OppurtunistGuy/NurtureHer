@@ -1,3 +1,4 @@
+import { remoteStorageConfig } from "./remote-storage-config.server";
 import { createClient, type Client, type Transaction, type InValue } from "@libsql/client/http";
 import { RemoteRepositoryCore } from "./remote-space-core.server";
 import type { SpaceRepository } from "./space-repository.server";
@@ -101,9 +102,7 @@ export class RemoteSpaceRepository implements SpaceStorage {
 }
 
 export function connectRemoteStorage() {
-  const url = process.env["TURSO_DATABASE_URL"]?.trim();
-  const authToken = process.env["TURSO_AUTH_TOKEN"]?.trim();
-  if (!url || !authToken || !/^(libsql|https):\/\//.test(url))
-    throw new Error("REMOTE_DATABASE_NOT_CONFIGURED");
-  return new RemoteSpaceRepository(createClient({ url, authToken }));
+  const config = remoteStorageConfig();
+  if (!config) throw new Error("REMOTE_DATABASE_NOT_CONFIGURED");
+  return new RemoteSpaceRepository(createClient(config));
 }

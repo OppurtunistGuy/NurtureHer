@@ -1,3 +1,4 @@
+import { remoteStorageConfig } from "./remote-storage-config.server";
 import { z } from "zod";
 import { SpaceError, SpaceRepository, SESSION_SECONDS } from "./space-repository.server";
 import { RoutineDraftError } from "./routine-drafting.server";
@@ -54,16 +55,16 @@ const COOKIE = "nocturne_member";
 let repository: SpaceStorage | undefined;
 function getRepository() {
   if (repository) return repository;
-  if (
-    (process.env["TURSO_DATABASE_URL"] || process.env["TURSO_AUTH_TOKEN"]) &&
-    (!process.env["TURSO_DATABASE_URL"]?.trim() || !process.env["TURSO_AUTH_TOKEN"]?.trim())
-  )
+  let config: ReturnType<typeof remoteStorageConfig>;
+  try {
+    config = remoteStorageConfig();
+  } catch {
     throw new SpaceError(
       503,
-      "Remote storage setup is incomplete. The app owner must set both TURSO_DATABASE_URL and TURSO_AUTH_TOKEN for this deployment, then redeploy.",
+      "Remote storage setup is incomplete or invalid. Check the Turso database URL and matching auth token for this deployment, then redeploy.",
     );
-  if (process.env["TURSO_DATABASE_URL"] || process.env["TURSO_AUTH_TOKEN"])
-    return (repository = connectRemoteStorage());
+  }
+  if (config) return (repository = connectRemoteStorage());
   if (process.env["VERCEL"] === "1")
     throw new SpaceError(
       503,
