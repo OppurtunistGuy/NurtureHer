@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RemoteSpaceRepository } from "./remote-storage.server";
 import { handleSpaceRequest } from "./space-api.server";
+import { principal } from "./auth-core.server";
 
 let directory: string;
 let first: RemoteSpaceRepository, second: RemoteSpaceRepository;
@@ -152,19 +153,31 @@ describe("durable remote storage", () => {
     ).rejects.toMatchObject({ status: 400 });
   });
   it("awaits database commit before returning a created-space HTTP response", async () => {
-    const response = await handleSpaceRequest(
-      new Request("https://boundsome.test/api/space", {
-        method: "POST",
-        headers: { origin: "https://boundsome.test", "content-type": "application/json" },
-        body: JSON.stringify({ op: "create", name: "Maya", role: "dom", adult: true }),
-      }),
-      first,
-    );
+    const post = (body: unknown, cookie = "") =>
+      handleSpaceRequest(
+        new Request("https://boundsome.test/api/space", {
+          method: "POST",
+          headers: { origin: "https://boundsome.test", "content-type": "application/json", cookie },
+          body: JSON.stringify(body),
+        }),
+        first,
+      );
+    const registered = await post({
+      op: "auth.register",
+      name: "Maya",
+      email: "maya@example.test",
+      password: "correct horse battery",
+      adult: true,
+    });
+    expect(registered.status).toBe(201);
+    const { account } = await registered.json();
+    const cookie = registered.headers.get("set-cookie")!.split(";")[0]!;
+    const response = await post({ op: "create", name: "Maya", role: "dom", adult: true }, cookie);
     expect(response.status).toBe(201);
     const snapshot = await response.json();
     expect(snapshot.state.names.dom).toBe("Maya");
-    const cookie = response.headers.get("set-cookie")!.split(";")[0]!.split("=")[1]!;
-    expect((await second.read(cookie)).state.space.id).toBe(snapshot.state.space.id);
+    // A second instance sees the committed space under the same account identity.
+    expect((await second.read(principal(account.id))).state.space.id).toBe(snapshot.state.space.id);
   });
   it("does not initialize storage for a visitor with no session", async () => {
     vi.stubEnv("VERCEL", "1");

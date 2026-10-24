@@ -6,6 +6,19 @@ import { join } from "node:path";
 import assert from "node:assert/strict";
 import { setTimeout as delay } from "node:timers/promises";
 
+const PASSWORD = "correct horse battery";
+/** Registers a fresh account from the signed-out setup screen. */
+async function signUp(page, name, email) {
+  await page.getByRole("button", { name: "Create account", exact: true }).first().click();
+  await page.getByLabel("Your name", { exact: true }).fill(name);
+  await page.getByLabel("Email", { exact: true }).fill(email);
+  await page.getByLabel("Password", { exact: true }).fill(PASSWORD);
+  await page.getByRole("checkbox").check();
+  await page.locator('form button[type="submit"]').click();
+  await page.getByRole("heading", { name: "Create your account", exact: true }).waitFor({
+    state: "detached",
+  });
+}
 const directory = await mkdtemp(join(tmpdir(), "nocturne-browser-"));
 const port = 4180,
   origin = `http://127.0.0.1:${port}`;
@@ -65,6 +78,13 @@ try {
   owner.setDefaultTimeout(15_000);
   guest.setDefaultTimeout(15_000);
   await owner.goto(origin);
+  await owner.getByRole("heading", { name: "Welcome back", exact: true }).waitFor();
+  assert.equal(
+    await owner.getByRole("button", { name: "Create my space", exact: true }).count(),
+    0,
+    "Signed-out visitors must not be offered shared creation",
+  );
+  await signUp(owner, "Demo Maya", "maya@e2e.test");
   await owner.getByLabel("Your name", { exact: true }).fill("Demo Maya");
   await owner.getByRole("checkbox").check();
   await owner.getByRole("button", { name: "Create my space", exact: true }).click();
@@ -83,6 +103,12 @@ try {
   );
   console.log("PASS browser: create, invitation and creator reload");
   await guest.goto(invitation);
+  await guest
+    .getByText("Demo Maya invited you to join as Sub. Log in or create an account to accept.", {
+      exact: true,
+    })
+    .waitFor();
+  await signUp(guest, "Demo Aria", "aria@e2e.test");
   await guest.getByText("Demo Maya invited you to join as Sub.", { exact: true }).waitFor();
   await guest.getByLabel("Your name", { exact: true }).fill("Demo Aria");
   await guest.getByRole("checkbox").check();
@@ -203,6 +229,7 @@ try {
   const outsider = await browser.newContext();
   const third = await outsider.newPage();
   await third.goto(invitation);
+  await signUp(third, "Demo Outsider", "outsider@e2e.test");
   await third.getByRole("alert").filter({ hasText: "invalid, expired or already used" }).waitFor();
   assert.equal(
     await third.getByRole("button", { name: "Join space", exact: true }).isDisabled(),
@@ -221,6 +248,7 @@ try {
     else await route.continue();
   });
   await failurePage.goto(origin);
+  await signUp(failurePage, "Demo Retry", "retry@e2e.test");
   await failurePage.getByLabel("Your name", { exact: true }).fill("Demo Retry");
   await failurePage.getByRole("checkbox").check();
   await failurePage.getByRole("button", { name: "Create my space", exact: true }).click();
@@ -341,6 +369,7 @@ try {
   const secondPartner = await secondContext.newPage();
   secondPartner.on("pageerror", (error) => errors.push(error.message));
   await secondPartner.goto(secondInvitation);
+  await signUp(secondPartner, "Demo Second Sub", "second@e2e.test");
   await secondPartner.getByLabel("Your name", { exact: true }).fill("Demo Second Sub");
   await secondPartner.getByRole("checkbox").check();
   await secondPartner.getByRole("button", { name: "Join space", exact: true }).click();
@@ -410,6 +439,29 @@ try {
   await guest.getByText("Paused. Your space is read-only.", { exact: true }).waitFor();
   console.log(
     "PASS browser: a Sub can join multiple Masters and preserve the original relationship",
+  );
+  // Sign out ends the session; signing back in on a new device restores every relationship.
+  await guest.goto(`${origin}/today`);
+  await guest.getByRole("button", { name: "Account menu for Demo Aria", exact: true }).click();
+  await guest.getByRole("menuitem", { name: "Sign out", exact: true }).click();
+  await guest.getByRole("heading", { name: "Welcome back", exact: true }).waitFor();
+  const stale = await guest.evaluate(async () => (await fetch("/api/space")).status);
+  assert.equal(stale, 401, "A signed-out browser must not read any space");
+  const laptopContext = await browser.newContext();
+  const laptop = await laptopContext.newPage();
+  laptop.on("pageerror", (error) => errors.push(error.message));
+  await laptop.goto(origin);
+  await laptop.getByLabel("Email", { exact: true }).fill("aria@e2e.test");
+  await laptop.getByLabel("Password", { exact: true }).fill(PASSWORD);
+  await laptop.locator('form button[type="submit"]').click();
+  await laptop.goto(`${origin}/today`);
+  await laptop.getByLabel("Active space", { exact: true }).waitFor();
+  assert.equal(
+    await laptop.getByLabel("Active space", { exact: true }).locator("option").count(),
+    2,
+  );
+  console.log(
+    "PASS browser: sign out ends the session; sign in on another device restores both relationships",
   );
   assert.deepEqual(errors, [], `Browser runtime errors: ${errors.join("; ")}`);
 } finally {

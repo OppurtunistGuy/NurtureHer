@@ -1,4 +1,11 @@
 import { DatabaseSync } from "node:sqlite";
+import {
+  ACCOUNT_MEMBERSHIP_EXPIRES,
+  AUTH_SCHEMA,
+  AuthCore,
+  asyncSql,
+  isPrincipal,
+} from "./auth-core.server";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -178,6 +185,25 @@ export class SpaceRepository {
       });
     }
     this.telegram = new TelegramProofStore(this.db);
+    for (const statement of AUTH_SCHEMA) this.db.exec(statement);
+  }
+  private authQueue: Promise<unknown> = Promise.resolve();
+  /** Runs account work in one write transaction, one call at a time on this connection. */
+  auth<T>(fn: (core: AuthCore) => Promise<T>): Promise<T> {
+    const run = async () => {
+      this.db.exec("BEGIN IMMEDIATE");
+      try {
+        const result = await fn(new AuthCore(asyncSql(this.db), this.now));
+        this.db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        throw error;
+      }
+    };
+    const next = this.authQueue.then(run, run);
+    this.authQueue = next.catch(() => {});
+    return next;
   }
   close() {
     this.db.close();
@@ -261,13 +287,23 @@ export class SpaceRepository {
       .run(JSON.stringify(validated), row.id);
   }
   private addMember(spaceId: string, role: Role, session: string) {
+    if (isPrincipal(session)) {
+      // Account memberships are keyed to the server-side account identity.
+      this.db
+        .prepare("INSERT INTO members (session_hash, space_id, role, expires) VALUES (?, ?, ?, ?)")
+        .run(hash(session), spaceId, role, ACCOUNT_MEMBERSHIP_EXPIRES);
+      this.db
+        .prepare("INSERT INTO member_accounts (space_id, role, user_id) VALUES (?, ?, ?)")
+        .run(spaceId, role, session.slice(5));
+      return session;
+    }
     const token = this.memberships(session).length ? session : secret();
     // Keep one anonymous identity across its private relationships.
     this.db
       .prepare("UPDATE members SET expires=? WHERE session_hash=?")
       .run(this.now().valueOf() + SESSION_SECONDS * 1000, hash(token));
     this.db
-      .prepare("INSERT INTO members VALUES (?, ?, ?, ?)")
+      .prepare("INSERT INTO members (session_hash, space_id, role, expires) VALUES (?, ?, ?, ?)")
       .run(hash(token), spaceId, role, this.now().valueOf() + SESSION_SECONDS * 1000);
     return token;
   }

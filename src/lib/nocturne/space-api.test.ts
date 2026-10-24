@@ -19,10 +19,27 @@ afterEach(() => {
   db.close();
   rmSync(directory, { recursive: true, force: true });
 });
+let accounts = 0;
 class BrowserSession {
-  cookie = "";
+  jar = new Map<string, string>();
   snapshot!: SpaceSnapshot;
+  get cookie() {
+    return [...this.jar].map(([key, value]) => `${key}=${value}`).join("; ");
+  }
+  set cookie(value: string) {
+    this.jar.clear();
+    for (const part of value.split(";").filter(Boolean)) {
+      const [key, ...rest] = part.trim().split("=");
+      this.jar.set(key!, rest.join("="));
+    }
+  }
+  get signedIn() {
+    return this.jar.has("boundsome_auth");
+  }
   async request(body?: Record<string, unknown>, selected = this.snapshot?.state.space.id) {
+    // Creating or joining needs an account; register one the first time, like a real person would.
+    if (body && (body["op"] === "create" || body["op"] === "join") && !this.signedIn)
+      await this.register(String(body["name"] ?? "Person"));
     const response = await handleSpaceRequest(
       new Request(
         `https://nocturne.test/api/space${!body && selected ? `?space=${selected}` : ""}`,
@@ -39,11 +56,22 @@ class BrowserSession {
       db,
     );
     const value = await response.json();
-    if (response.headers.has("set-cookie"))
-      this.cookie = response.headers.get("set-cookie")!.split(";")[0]!;
+    for (const header of response.headers.getSetCookie()) {
+      const [pair, ...attributes] = header.split(";");
+      const [key, ...rest] = pair!.split("=");
+      if (attributes.some((a) => a.trim() === "Max-Age=0")) this.jar.delete(key!);
+      else this.jar.set(key!, rest.join("="));
+    }
     if (value.state) this.snapshot = value as SpaceSnapshot;
     if (value.snapshot) this.snapshot = value.snapshot as SpaceSnapshot;
     return { response, value };
+  }
+  register(
+    name = "Person",
+    email = `person${++accounts}@example.test`,
+    password = "correct horse battery",
+  ) {
+    return this.request({ op: "auth.register", name, email, password, adult: true });
   }
   create(name = "Maya", role: Role = "dom") {
     return this.request({ op: "create", name, role, adult: true });
@@ -182,10 +210,12 @@ describe("real shared-space requests with independent browser sessions", () => {
     async (role) => {
       const creator = new BrowserSession(),
         partner = new BrowserSession();
+      const registered = await creator.register("Maya");
+      expect(registered.response.status).toBe(201);
+      expect(registered.response.headers.get("set-cookie")).toMatch(/HttpOnly; SameSite=Strict/);
+      expect(registered.response.headers.get("set-cookie")).toContain("Secure");
       const created = await creator.create("Maya", role);
       expect(created.response.status).toBe(201);
-      expect(created.response.headers.get("set-cookie")).toMatch(/HttpOnly; SameSite=Strict/);
-      expect(created.response.headers.get("set-cookie")).toContain("Secure");
       expect(creator.snapshot.state.space.paired).toBe(false);
       expect(creator.snapshot.state.routines).toHaveLength(0);
       const token = creator.snapshot.invite!.token;
@@ -527,7 +557,7 @@ describe("request and invitation boundaries", () => {
     const legacy = new DatabaseSync(join(directory, "spaces.sqlite"));
     legacy.exec(`ALTER TABLE members RENAME TO current_members;
       CREATE TABLE members (session_hash TEXT PRIMARY KEY,space_id TEXT NOT NULL REFERENCES spaces(id),role TEXT NOT NULL,expires INTEGER NOT NULL,UNIQUE(space_id,role));
-      INSERT INTO members SELECT * FROM current_members; DROP TABLE current_members;`);
+      INSERT INTO members SELECT session_hash, space_id, role, expires FROM current_members; DROP TABLE current_members;`);
     legacy.close();
     db = new SpaceRepository(join(directory, "spaces.sqlite"), () => clock);
     await creator.request();

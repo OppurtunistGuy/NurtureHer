@@ -1,4 +1,4 @@
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   BookOpen,
   CalendarClock,
@@ -11,6 +11,7 @@ import {
   ClipboardCheck,
   MoreHorizontal,
   Award,
+  UserRound,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import {
@@ -30,6 +31,56 @@ import {
   SheetClose,
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { accountActions, useAccount } from "@/lib/nocturne/account";
+import { toast } from "sonner";
+
+/** Signed-in person, with My account, Dashboard and Sign out. */
+export function AccountMenu() {
+  const me = useAccount(),
+    navigate = useNavigate();
+  if (me.status !== "signedIn" || !me.account) return null;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={`Account menu for ${me.account.name}`}
+        className="rounded-md p-2 text-muted-foreground hover:text-foreground"
+      >
+        <UserRound className="h-5 w-5" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuLabel className="font-normal">
+          <span className="block truncate text-sm text-ivory">{me.account.name}</span>
+          <span className="block truncate text-xs text-muted-foreground">{me.account.email}</span>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => void navigate({ to: "/account" })}>
+          My account
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void navigate({ to: "/today" })}>
+          Dashboard
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onSelect={async () => {
+            const result = await accountActions.logout();
+            if (result.ok) await navigate({ to: "/", replace: true });
+            else toast.error(result.error);
+          }}
+        >
+          Sign out
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
 const NAV = [
   { to: "/today", label: "Today", icon: Sun },
@@ -59,6 +110,7 @@ export function AppShell({
 }) {
   const s = useNocturne(),
     connection = useSpaceConnection(),
+    me = useAccount(),
     { pathname } = useLocation();
   useReminders();
   if (!s.onboarded)
@@ -108,6 +160,7 @@ export function AppShell({
             >
               <Settings className="h-5 w-5" />
             </Link>
+            <AccountMenu />
           </div>
         </div>
         {s.space.mode === "shared" && (
@@ -174,6 +227,20 @@ export function AppShell({
         </div>
       </header>
       <PauseBanner />
+      {s.space.mode === "shared" && me.status === "signedOut" && (
+        <div
+          role="status"
+          className="mx-auto mt-4 w-full max-w-3xl rounded-md border border-gold/40 p-4 text-sm"
+        >
+          <p>
+            You are using this space without an account. It only opens on this browser, for a
+            limited time.
+          </p>
+          <Link to="/" hash="setup" className="mt-2 inline-block text-gold underline">
+            Create an account to keep this space
+          </Link>
+        </div>
+      )}
       {s.space.mode === "shared" && connection.error && (
         <div role="alert" className="mx-auto mt-4 w-full max-w-3xl rounded-md border p-4 text-sm">
           <p>{connection.error}</p>

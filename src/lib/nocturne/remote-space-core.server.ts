@@ -10,6 +10,7 @@ import type { SpaceSnapshot } from "./space-protocol";
 import { RemoteTelegramProofStore } from "./remote-telegram.server";
 import { telegramConfigured } from "./telegram-proof.server";
 import type { RemoteSql } from "./remote-storage.server";
+import { ACCOUNT_MEMBERSHIP_EXPIRES, isPrincipal } from "./auth-core.server";
 type Row = {
   id: string;
   body: string;
@@ -104,13 +105,23 @@ export class RemoteRepositoryCore {
       .run(JSON.stringify(validated), row.id);
   }
   private async addMember(spaceId: string, role: Role, session: string) {
+    if (isPrincipal(session)) {
+      // Account memberships are keyed to the server-side account identity.
+      await this.db
+        .prepare("INSERT INTO members (session_hash, space_id, role, expires) VALUES (?, ?, ?, ?)")
+        .run(hash(session), spaceId, role, ACCOUNT_MEMBERSHIP_EXPIRES);
+      await this.db
+        .prepare("INSERT INTO member_accounts (space_id, role, user_id) VALUES (?, ?, ?)")
+        .run(spaceId, role, session.slice(5));
+      return session;
+    }
     const token = (await this.memberships(session)).length ? session : secret();
     // Keep one anonymous identity across its private relationships.
     await this.db
       .prepare("UPDATE members SET expires=? WHERE session_hash=?")
       .run(this.now().valueOf() + SESSION_SECONDS * 1000, hash(token));
     await this.db
-      .prepare("INSERT INTO members VALUES (?, ?, ?, ?)")
+      .prepare("INSERT INTO members (session_hash, space_id, role, expires) VALUES (?, ?, ?, ?)")
       .run(hash(token), spaceId, role, this.now().valueOf() + SESSION_SECONDS * 1000);
     return token;
   }

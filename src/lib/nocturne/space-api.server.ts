@@ -4,6 +4,8 @@ import { SpaceError, SpaceRepository, SESSION_SECONDS } from "./space-repository
 import { RoutineDraftError } from "./routine-drafting.server";
 import { timingSafeEqual } from "node:crypto";
 import { connectRemoteStorage, type SpaceStorage } from "./remote-storage.server";
+import { AUTH_SESSION_SECONDS, principal, type Account } from "./auth-core.server";
+import { burnPasswordCheck, hashPassword, verifyPassword } from "./passwords.server";
 
 const name = z.string().trim().min(1, "Enter your name.").max(40),
   token = z.string().regex(/^[a-f0-9]{64}$/),
@@ -21,7 +23,18 @@ const timeZone = z
     }
   })
   .default("UTC");
+const email = z.string().trim().toLowerCase().email().max(254),
+  password = z.string().min(10).max(200);
 const requestSchema = z.discriminatedUnion("op", [
+  z
+    .object({ op: z.literal("auth.register"), email, name, password, adult: z.literal(true) })
+    .strict(),
+  z.object({ op: z.literal("auth.login"), email, password: z.string().min(1).max(200) }).strict(),
+  z.object({ op: z.literal("auth.logout") }).strict(),
+  z
+    .object({ op: z.literal("auth.password"), current: z.string().min(1).max(200), next: password })
+    .strict(),
+  z.object({ op: z.literal("auth.rename"), name }).strict(),
   z
     .object({
       op: z.literal("create"),
@@ -51,7 +64,32 @@ const requestSchema = z.discriminatedUnion("op", [
     })
     .strict(),
 ]);
-const COOKIE = "nocturne_member";
+const COOKIE = "nocturne_member",
+  AUTH_COOKIE = "boundsome_auth";
+const HEX_TOKEN = /^[a-f0-9]{64}$/;
+const AUTH_MESSAGES: Record<string, string> = {
+  "auth.register":
+    "Enter your name, a valid email and a password of at least 10 characters, and confirm you are 18+.",
+  "auth.login": "Enter your email and password.",
+  "auth.password": "Enter your current password and a new password of at least 10 characters.",
+  "auth.rename": "Enter a name of up to 40 characters.",
+};
+const LOGIN_FAILED = "That email and password don't match an account.";
+function readCookies(header: string | null) {
+  const cookies: Record<string, string> = {};
+  for (const part of header?.split(";") ?? []) {
+    const index = part.indexOf("=");
+    if (index > 0) cookies[part.slice(0, index).trim()] = part.slice(index + 1).trim();
+  }
+  return cookies;
+}
+function clientIp(request: Request) {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip")?.trim() ||
+    "local"
+  ).slice(0, 64);
+}
 let repository: SpaceStorage | undefined;
 function getRepository() {
   if (repository) return repository;
@@ -81,7 +119,8 @@ async function readBody(request: Request) {
   const reader = request.body?.getReader();
   if (!reader) throw new SpaceError(400, "Request body is required.");
   const chunks: Uint8Array[] = [];
-  let bytes = 0;
+  let bytes = 0,
+    raw: unknown;
   try {
     for (;;) {
       const next = await reader.read();
@@ -93,10 +132,15 @@ async function readBody(request: Request) {
       }
       chunks.push(next.value);
     }
-    return requestSchema.parse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+    raw = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return requestSchema.parse(raw);
   } catch (error) {
     if (error instanceof SpaceError) throw error;
-    throw new SpaceError(400, "Check the name, invitation and request details.");
+    const op = typeof raw === "object" && raw ? String((raw as { op?: unknown }).op) : "";
+    throw new SpaceError(
+      400,
+      AUTH_MESSAGES[op] ?? "Check the name, invitation and request details.",
+    );
   }
 }
 export async function handleSpaceRequest(
@@ -111,32 +155,125 @@ export async function handleSpaceRequest(
   });
   const json = (data: unknown, status = 200) =>
     new Response(JSON.stringify(data), { status, headers });
+  const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+  const setCookie = (cookieName: string, value: string, maxAge: number) =>
+    headers.append(
+      "set-cookie",
+      `${cookieName}=${value}; Path=/api/space; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure}`,
+    );
   try {
-    const session =
-      request.headers
-        .get("cookie")
-        ?.split(";")
-        .map((x) => x.trim())
-        .find((x) => x.startsWith(`${COOKIE}=`))
-        ?.slice(COOKIE.length + 1) ?? "";
+    const cookies = readCookies(request.headers.get("cookie"));
+    // Only well-formed random tokens are accepted, so a cookie can never name an account.
+    const legacy = HEX_TOKEN.test(cookies[COOKIE] ?? "") ? cookies[COOKIE]! : "";
+    const authToken = HEX_TOKEN.test(cookies[AUTH_COOKIE] ?? "") ? cookies[AUTH_COOKIE]! : "";
     if (request.method !== "GET" && request.method !== "POST")
       return json({ error: "Method not allowed." }, 405);
     if (request.method === "POST" && request.headers.get("origin") !== new URL(request.url).origin)
       throw new SpaceError(403, "Open this page on the same site before making changes.");
-    if (request.method === "GET" && !session)
+    const url = new URL(request.url);
+    const wantsAccount = request.method === "GET" && url.searchParams.has("account");
+    if (request.method === "GET" && !wantsAccount && !legacy && !authToken)
       throw new SpaceError(
         401,
         "No active space on this browser. Open an invitation or create a space.",
       );
     const db = suppliedRepository ?? getRepository();
-    if (request.method === "GET")
+    let account: Account | undefined;
+    if (authToken) {
+      account = await db.auth((core) => core.resolveSession(authToken));
+      if (!account) setCookie(AUTH_COOKIE, "", 0);
+    }
+    // Signed-in requests act as the account; the old browser cookie only works while signed out.
+    const session = account ? principal(account.id) : legacy;
+    if (wantsAccount)
+      return json({
+        account: account ?? null,
+        legacySpaces: !account && legacy ? await db.auth((core) => core.legacyCount(legacy)) : 0,
+      });
+    if (request.method === "GET") {
+      if (!session)
+        throw new SpaceError(401, "Your session ended. Log in again to open your spaces.");
       return json(
-        await db.read(
-          session,
-          spaceId.parse(new URL(request.url).searchParams.get("space") ?? undefined),
-        ),
+        await db.read(session, spaceId.parse(url.searchParams.get("space") ?? undefined)),
       );
+    }
     const input = await readBody(request);
+    if (input.op === "auth.register" || input.op === "auth.login") {
+      let user: Account;
+      if (input.op === "auth.register") {
+        const passwordHash = await hashPassword(input.password);
+        const created = await db.auth((core) =>
+          core.createUser(input.email, input.name, passwordHash),
+        );
+        if (!created)
+          throw new SpaceError(409, "An account with this email already exists. Log in instead.");
+        user = created;
+      } else {
+        const ip = clientIp(request);
+        const limit = await db.auth((core) => core.throttle(input.email, ip));
+        if (limit.retryAfter > 0) {
+          headers.set("retry-after", String(limit.retryAfter));
+          throw new SpaceError(
+            429,
+            `Too many attempts. Wait ${limit.retryAfter} seconds and try again.`,
+          );
+        }
+        if (limit.slow) await new Promise((resolve) => setTimeout(resolve, 1000));
+        const found = await db.auth((core) => core.findUserByEmail(input.email));
+        const valid = found
+          ? await verifyPassword(input.password, found.password_hash)
+          : (await burnPasswordCheck(input.password), false);
+        if (!found || !valid) {
+          await db.auth((core) => core.recordFailure(input.email, ip));
+          throw new SpaceError(401, LOGIN_FAILED);
+        }
+        await db.auth((core) => core.clearFailures(input.email, ip));
+        user = { id: found.id, email: found.email, name: found.name };
+      }
+      // Claiming happens only here, after the password check or a new registration succeeded.
+      const result = await db.auth(async (core) => ({
+        claimed: legacy ? await core.claim(user.id, legacy) : 0,
+        remaining: legacy ? await core.legacyCount(legacy) : 0,
+        token: await core.createSession(user.id),
+      }));
+      setCookie(AUTH_COOKIE, result.token, AUTH_SESSION_SECONDS);
+      if (legacy && result.remaining === 0) setCookie(COOKIE, "", 0);
+      return json(
+        { account: user, claimed: result.claimed },
+        input.op === "auth.register" ? 201 : 200,
+      );
+    }
+    if (input.op === "auth.logout") {
+      if (authToken) await db.auth((core) => core.deleteSession(authToken));
+      setCookie(AUTH_COOKIE, "", 0);
+      return json({ ok: true });
+    }
+    if (input.op === "auth.password" || input.op === "auth.rename") {
+      if (!account) throw new SpaceError(401, "Log in again to change your account.");
+      const signedIn = account;
+      if (input.op === "auth.rename") {
+        await db.auth((core) => core.rename(signedIn.id, input.name));
+        return json({ account: { ...signedIn, name: input.name.trim() } });
+      }
+      const ip = clientIp(request);
+      const limit = await db.auth((core) => core.throttle(signedIn.email, ip));
+      if (limit.retryAfter > 0)
+        throw new SpaceError(
+          429,
+          `Too many attempts. Wait ${limit.retryAfter} seconds and try again.`,
+        );
+      const stored = await db.auth((core) => core.userWithHash(signedIn.id));
+      if (!stored || !(await verifyPassword(input.current, stored.password_hash))) {
+        await db.auth((core) => core.recordFailure(signedIn.email, ip));
+        throw new SpaceError(401, "Your current password is not correct.");
+      }
+      const passwordHash = await hashPassword(input.next);
+      await db.auth(async (core) => {
+        await core.setPassword(signedIn.id, passwordHash);
+        await core.deleteOtherSessions(signedIn.id, authToken);
+      });
+      return json({ ok: true });
+    }
     if (input.op === "telegram.open")
       return json(await db.openTelegram(session, input.spaceId, input.routineId));
     if (input.op === "draft") {
@@ -153,16 +290,18 @@ export async function handleSpaceRequest(
     }
     if (input.op === "preview") return json(await db.preview(input.token));
     if (input.op === "create" || input.op === "join") {
+      if (!account)
+        throw new SpaceError(
+          401,
+          "Log in or create an account before creating or joining a space.",
+        );
       const result =
         input.op === "create"
           ? await db.create(input.name, input.role, session, input.timeZone)
           : await db.join(input.token, input.name, session);
-      headers.set(
-        "set-cookie",
-        `${COOKIE}=${result.token}; Path=/api/space; HttpOnly; SameSite=Strict; Max-Age=${SESSION_SECONDS}${new URL(request.url).protocol === "https:" ? "; Secure" : ""}`,
-      );
       return json(result.snapshot, 201);
     }
+    if (!session) throw new SpaceError(401, "Your session ended. Log in again to make changes.");
     return json(
       await db.change(
         session,

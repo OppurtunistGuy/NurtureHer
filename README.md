@@ -6,10 +6,10 @@ A shared space for two, with separate pages for routines, goals, written check-i
 
 ## Create, share and join
 
-1. Open the app, enter your name, choose Master or Sub and confirm voluntary adult participation. Select **Create my space**. No account, password or partner name is required.
+1. Open the app and **create an account** (name, email, password of at least 10 characters, 18+ confirmation) or **log in**. Then choose Master or Sub and select **Create my space**. Spaces you opened on this browser before accounts existed move into your account the first time you log in or register there.
 2. Today shows **Your space is ready**, a waiting state and a real invitation link. Copy it and send it to the other person. You can prepare routines and explore while waiting; the shared dynamic has not started.
-3. The other person opens that link on their own browser, sees who invited them and their assigned opposite role, enters their name, confirms participation and selects **Join space**.
-4. Both browsers now read the same space. Names, routines, notes, check-ins, review decisions and pause discussion synchronize while the app is open. Reloading restores membership from the browser session.
+3. The other person opens that link, sees who invited them and their assigned opposite role, logs in or creates an account, confirms participation and selects **Join space**.
+4. Both accounts now read the same space, on any device they sign in from. The account menu (top right) has **My account**, **Dashboard** and **Sign out**. Signing out ends the session on the server and keeps all data. Names, routines, notes, check-ins, review decisions and pause discussion synchronize while the app is open. Reloading restores membership from the browser session.
 5. Both people review and acknowledge the agreement before task submission. Account registration and deeper onboarding can be added later.
 
 Invitations admit one person, expire after seven days and can be replaced by their creator before pairing. Replacing a link invalidates the old link. A used, expired or invalid invitation displays an explanation instead of creating a second space. Links contain a random invitation secret in the URL fragment, with no names, tasks or agreement text. Anyone holding an unused link can occupy its vacant place: share it directly with the intended person.
