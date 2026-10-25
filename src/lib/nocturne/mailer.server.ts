@@ -1,45 +1,95 @@
-// Outgoing email through Resend's HTTP API. Needs RESEND_API_KEY (server-only secret, ideally a
-// sending-only key limited to the domain); MAIL_FROM sets the sender, e.g.
-// "BoundSome <no-reply@mail.yourdomain.com>". Without a verified domain Resend only delivers from
-// its test address to the Resend account owner.
+// Outgoing email. Two providers, picked by which key is set:
+//
+//   BREVO_API_KEY  — Brevo (free tier, 300/day). Works with a single verified sender, so no domain
+//                    is needed; MAIL_FROM must be that verified address, e.g.
+//                    "BoundSome <you@gmail.com>". Preferred when set.
+//   RESEND_API_KEY — Resend. Needs a verified domain to reach arbitrary inboxes; without one it only
+//                    delivers from its test address to the Resend account owner. Used as a fallback.
+//
+// Secrets are server-only and never logged.
 export type Mail = {
   to: string;
   subject: string;
   text: string;
-  /** Same key → Resend creates the email once, even if a retry repeats the request. */
+  /** Resend only: same key → the email is created once even if a retry repeats the request. */
   idempotencyKey?: string;
 };
 export type Mailer = (mail: Mail) => Promise<boolean>;
 
-const DEFAULT_FROM = "BoundSome <onboarding@resend.dev>";
+const RESEND_URL = "https://api.resend.com/emails";
+const BREVO_URL = "https://api.brevo.com/v3/smtp/email";
+const RESEND_DEFAULT_FROM = "BoundSome <onboarding@resend.dev>";
 const ATTEMPTS = 3;
 
-export const mailConfigured = () => (process.env["RESEND_API_KEY"]?.trim().length ?? 0) > 10;
+const keyOf = (name: string) => {
+  const value = process.env[name]?.trim();
+  return value && value.length > 10 ? value : undefined;
+};
+
+/** MAIL_FROM as "Name <email>" or a bare address. Returns null when unset. */
+function sender(): { name: string; email: string } | null {
+  const raw = process.env["MAIL_FROM"]?.trim();
+  if (!raw) return null;
+  const match = /^(.*?)\s*<([^>]+)>$/.exec(raw);
+  if (match) return { name: match[1]?.trim() || "BoundSome", email: match[2]!.trim() };
+  return { name: "BoundSome", email: raw };
+}
+
+// Brevo needs a verified sender address; Resend can fall back to its own test sender.
+export const mailConfigured = () =>
+  (!!keyOf("BREVO_API_KEY") && !!sender()) || !!keyOf("RESEND_API_KEY");
 
 /** Retry only what can succeed later: network errors, rate limits and server errors. */
 const retryable = (status: number) => status === 429 || status >= 500;
 
-const resend: Mailer = async (mail) => {
-  const key = process.env["RESEND_API_KEY"]?.trim();
-  if (!key) return false;
-  const headers: Record<string, string> = {
-    authorization: `Bearer ${key}`,
-    "content-type": "application/json",
-  };
-  if (mail.idempotencyKey) headers["idempotency-key"] = mail.idempotencyKey.slice(0, 256);
-  const body = JSON.stringify({
-    from: process.env["MAIL_FROM"]?.trim() || DEFAULT_FROM,
-    to: [mail.to],
-    subject: mail.subject,
-    text: mail.text,
-  });
+type Request = { url: string; headers: Record<string, string>; body: string };
+
+function buildRequest(mail: Mail): Request | null {
+  const brevo = keyOf("BREVO_API_KEY");
+  const from = sender();
+  if (brevo && from) {
+    return {
+      url: BREVO_URL,
+      headers: { "api-key": brevo, "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({
+        sender: from,
+        to: [{ email: mail.to }],
+        subject: mail.subject,
+        textContent: mail.text,
+      }),
+    };
+  }
+  const resend = keyOf("RESEND_API_KEY");
+  if (resend) {
+    const headers: Record<string, string> = {
+      authorization: `Bearer ${resend}`,
+      "content-type": "application/json",
+    };
+    if (mail.idempotencyKey) headers["idempotency-key"] = mail.idempotencyKey.slice(0, 256);
+    return {
+      url: RESEND_URL,
+      headers,
+      body: JSON.stringify({
+        from: process.env["MAIL_FROM"]?.trim() || RESEND_DEFAULT_FROM,
+        to: [mail.to],
+        subject: mail.subject,
+        text: mail.text,
+      }),
+    };
+  }
+  return null;
+}
+
+const liveSend: Mailer = async (mail) => {
+  const request = buildRequest(mail);
+  if (!request) return false;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     let status = 0;
     try {
-      const response = await fetch("https://api.resend.com/emails", {
+      const response = await fetch(request.url, {
         method: "POST",
-        headers,
-        body,
+        headers: request.headers,
+        body: request.body,
         signal: AbortSignal.timeout(8000),
       });
       if (response.ok) return true;
@@ -55,9 +105,9 @@ const resend: Mailer = async (mail) => {
   return false;
 };
 
-let mailer: Mailer = resend;
+let mailer: Mailer = liveSend;
 /** Tests swap the sender so nothing leaves the machine. Pass nothing to restore. */
 export function setMailer(replacement?: Mailer) {
-  mailer = replacement ?? resend;
+  mailer = replacement ?? liveSend;
 }
 export const sendMail: Mailer = (mail) => mailer(mail);

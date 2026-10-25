@@ -76,3 +76,73 @@ describe("Resend mailer", () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe("Brevo mailer", () => {
+  let calls: { url: string; headers: Record<string, string>; body: Record<string, unknown> }[];
+  const answer = (statuses: (number | "network")[]) => {
+    let i = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init: RequestInit) => {
+        calls.push({
+          url,
+          headers: init.headers as Record<string, string>,
+          body: JSON.parse(init.body as string),
+        });
+        const status = statuses[Math.min(i++, statuses.length - 1)]!;
+        if (status === "network") throw new TypeError("fetch failed");
+        return new Response("{}", { status });
+      }),
+    );
+  };
+  beforeEach(() => {
+    calls = [];
+    // Brevo is preferred when its key and a verified sender are both set.
+    process.env["BREVO_API_KEY"] = "xkeysib_test_key_for_unit_tests";
+    process.env["MAIL_FROM"] = "BoundSome <founder@gmail.test>";
+    process.env["RESEND_API_KEY"] = "re_test_key_for_unit_tests";
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.useFakeTimers({ toFake: ["setTimeout"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    delete process.env["BREVO_API_KEY"];
+    delete process.env["MAIL_FROM"];
+    delete process.env["RESEND_API_KEY"];
+  });
+  const send = async () => {
+    const result = sendMail(mail);
+    await vi.runAllTimersAsync();
+    return result;
+  };
+
+  it("sends through Brevo with the api-key header and the verified sender", async () => {
+    answer([201]);
+    expect(await send()).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toBe("https://api.brevo.com/v3/smtp/email");
+    expect(calls[0]!.headers["api-key"]).toBe("xkeysib_test_key_for_unit_tests");
+    expect(calls[0]!.headers["authorization"]).toBeUndefined();
+    expect(calls[0]!.body).toMatchObject({
+      sender: { name: "BoundSome", email: "founder@gmail.test" },
+      to: [{ email: mail.to }],
+      subject: mail.subject,
+      textContent: mail.text,
+    });
+  });
+
+  it("retries Brevo on rate limits and server errors", async () => {
+    answer([429, 503, 201]);
+    expect(await send()).toBe(true);
+    expect(calls).toHaveLength(3);
+  });
+
+  it("falls back to Resend when Brevo has a key but no verified sender", async () => {
+    delete process.env["MAIL_FROM"];
+    answer([200]);
+    expect(await send()).toBe(true);
+    expect(calls[0]!.url).toBe("https://api.resend.com/emails");
+  });
+});
