@@ -67,12 +67,21 @@ for (const backend of ["local SQLite", "remote libSQL"] as const) {
     it("assigns to Sub A only, then reviews Sub B, on one signed-in account", async () => {
       const { master, subB, a, b } = await setup();
       expect((await master.command(a, { type: "routine.save", routine })).status).toBe(200);
-      await master.command(b, { type: "routine.save", routine: { ...routine, id: "b1", title: "B" } });
+      await master.command(b, {
+        type: "routine.save",
+        routine: { ...routine, id: "b1", title: "B" },
+      });
       await subB.command(b, { type: "submission", id: "b1", text: "Done." });
       const open = (await master.open(b)).body.state.submissions[0];
       expect(
-        (await master.command(b, { type: "review", id: open.id, decision: "accepted", response: "" }))
-          .status,
+        (
+          await master.command(b, {
+            type: "review",
+            id: open.id,
+            decision: "accepted",
+            response: "",
+          })
+        ).status,
       ).toBe(200);
       const stateA = (await master.open(a)).body.state,
         stateB = (await master.open(b)).body.state;

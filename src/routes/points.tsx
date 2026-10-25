@@ -229,7 +229,12 @@ function PointsPage() {
             </Button>
           </form>
           {showLevels && (
-            <LevelEditor key={s.space.id ?? "demo"} initial={summary.levels} disabled={!allowed} />
+            <LevelEditor
+              key={s.space.id ?? "demo"}
+              initial={summary.levels}
+              disabled={!allowed}
+              open={levelsOnly}
+            />
           )}
         </>
       )}
@@ -340,7 +345,15 @@ function PointsPage() {
   );
 }
 
-function LevelEditor({ initial, disabled }: { initial: PointsLevel[]; disabled: boolean }) {
+function LevelEditor({
+  initial,
+  disabled,
+  open = false,
+}: {
+  initial: PointsLevel[];
+  disabled: boolean;
+  open?: boolean;
+}) {
   const [levels, setLevels] = useState(initial.map((item) => ({ ...item })));
   useUnsavedChanges(JSON.stringify(levels) !== JSON.stringify(initial), "levels and milestones");
   const subName = useSubName();
@@ -369,7 +382,7 @@ function LevelEditor({ initial, disabled }: { initial: PointsLevel[]; disabled: 
     }
   }
   return (
-    <details className="rounded-lg border p-4">
+    <details className="rounded-lg border p-4" open={open}>
       <summary className="cursor-pointer text-sm">Customise level labels & milestones</summary>
       <form onSubmit={save} className="mt-4 space-y-5">
         <p className="text-xs text-muted-foreground">

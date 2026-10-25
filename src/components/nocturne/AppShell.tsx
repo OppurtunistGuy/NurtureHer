@@ -209,7 +209,7 @@ export function AppShell({
           </div>
         )}
         <nav
-          className="mx-auto hidden max-w-3xl items-center justify-between gap-1 overflow-x-auto px-3 pb-3 md:flex"
+          className={`mx-auto hidden max-w-3xl items-center gap-1 px-3 pb-3 md:flex ${profile ? "flex-wrap" : "justify-between overflow-x-auto"}`}
           aria-label={profile ? `Sections for ${profile.subName}` : "Main"}
         >
           {profile && <ProfileSections profile={profile} />}
