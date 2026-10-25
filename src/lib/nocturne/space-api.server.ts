@@ -4,7 +4,8 @@ import { SpaceError, SpaceRepository, SESSION_SECONDS } from "./space-repository
 import { RoutineDraftError } from "./routine-drafting.server";
 import { timingSafeEqual } from "node:crypto";
 import { connectRemoteStorage, type SpaceStorage } from "./remote-storage.server";
-import { AUTH_SESSION_SECONDS, principal, type Account } from "./auth-core.server";
+import { randomUUID } from "node:crypto";
+import { AUTH_SESSION_SECONDS, hashToken, principal, type Account } from "./auth-core.server";
 import { burnPasswordCheck, hashPassword, verifyPassword } from "./passwords.server";
 import { deliver, yesNoButtons } from "./telegram-bot.server";
 import { mailConfigured, sendMail } from "./mailer.server";
@@ -117,6 +118,7 @@ async function passwordNotice(user: { email: string; name: string }, how: "reset
   await sendMail({
     to: user.email,
     subject: "Your BoundSome password was changed",
+    idempotencyKey: `password-notice-${randomUUID()}`,
     text: `Hi ${user.name},\n\nThe password for your BoundSome account was just ${how === "reset" ? "reset with an emailed link" : "changed from your account page"}. ${how === "reset" ? "Every device was signed out." : "Your other devices were signed out."}\n\nIf this was you, there's nothing to do. If it wasn't, use "Forgot your password?" on the log-in page right away to choose a new one.\n`,
   });
 }
@@ -303,6 +305,8 @@ export async function handleSpaceRequest(
       const delivered = await sendMail({
         to: found.email,
         subject: "Reset your BoundSome password",
+        // From the stored hash, never the token itself, so the key can't open the link.
+        idempotencyKey: `password-reset-${hashToken(resetToken)}`,
         text: `Hi ${found.name},\n\nSomeone asked to reset the password for this BoundSome account. Open this link within 30 minutes to choose a new one:\n\n${link}\n\nIt works once. If this wasn't you, ignore this email; your password stays the same.\n`,
       });
       // A failed send leaves a link nobody has, so remove it instead of keeping it live.
