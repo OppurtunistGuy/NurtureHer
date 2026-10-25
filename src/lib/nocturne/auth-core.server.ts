@@ -21,6 +21,10 @@ const FIFTEEN_MINUTES = 15 * 60 * 1000;
 const FIVE_MINUTES = 5 * 60 * 1000;
 export const IP_FAILURE_LIMIT = 20;
 export const GLOBAL_SPIKE = 300;
+export const RESET_TOKEN_MINUTES = 30;
+export const RESET_PER_EMAIL = 3;
+export const RESET_PER_IP = 10;
+const ONE_HOUR = 60 * 60 * 1000;
 
 export const AUTH_SCHEMA = [
   "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL, password_hash TEXT NOT NULL, created INTEGER NOT NULL)",
@@ -29,6 +33,9 @@ export const AUTH_SCHEMA = [
   "CREATE TABLE IF NOT EXISTS login_failures (key TEXT NOT NULL, at INTEGER NOT NULL)",
   "CREATE INDEX IF NOT EXISTS login_failures_key ON login_failures(key, at)",
   // A separate table, so code still running without accounts never sees a changed members table.
+  // Only a hash of each emailed reset token is stored; a token works once and expires quickly.
+  "CREATE TABLE IF NOT EXISTS password_resets (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires INTEGER NOT NULL, created INTEGER NOT NULL)",
+  "CREATE INDEX IF NOT EXISTS password_resets_user ON password_resets(user_id)",
   "CREATE TABLE IF NOT EXISTS member_accounts (space_id TEXT NOT NULL, role TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY(space_id, role))",
 ];
 
@@ -164,6 +171,66 @@ export class AuthCore {
     await this.db
       .prepare("DELETE FROM login_failures WHERE key=?")
       .run(`pair:${normalizeEmail(email)}|${ip}`);
+  }
+
+  /**
+   * Counts a reset request and says whether it may go ahead. Limits are per email and per IP over
+   * an hour, so one person can't fill an inbox and one address can't be used to probe many emails.
+   * `ipBlocked` is safe to show; an email limit is never shown (it would reveal the account).
+   */
+  async resetAllowance(
+    email: string,
+    ip: string,
+  ): Promise<{ ipBlocked: boolean; emailBlocked: boolean }> {
+    const since = this.time - ONE_HOUR;
+    const count = async (key: string) =>
+      Number(
+        (
+          (await this.db
+            .prepare("SELECT COUNT(*) AS n FROM login_failures WHERE key=? AND at>?")
+            .get(key, since)) as { n: number | bigint }
+        ).n,
+      );
+    const ipKey = `reset-ip:${ip}`,
+      emailKey = `reset-email:${normalizeEmail(email)}`;
+    const ipBlocked = (await count(ipKey)) >= RESET_PER_IP;
+    const emailBlocked = (await count(emailKey)) >= RESET_PER_EMAIL;
+    const statement = this.db.prepare("INSERT INTO login_failures (key, at) VALUES (?, ?)");
+    await statement.run(ipKey, this.time);
+    await statement.run(emailKey, this.time);
+    return { ipBlocked, emailBlocked };
+  }
+
+  /** One live reset token per account: asking again replaces the earlier link. */
+  async createReset(userId: string) {
+    const token = newToken();
+    await this.db.prepare("DELETE FROM password_resets WHERE user_id=?").run(userId);
+    await this.db
+      .prepare(
+        "INSERT INTO password_resets (token_hash, user_id, expires, created) VALUES (?, ?, ?, ?)",
+      )
+      .run(hashToken(token), userId, this.time + RESET_TOKEN_MINUTES * 60 * 1000, this.time);
+    return token;
+  }
+
+  async discardReset(userId: string) {
+    await this.db.prepare("DELETE FROM password_resets WHERE user_id=?").run(userId);
+  }
+
+  /**
+   * Uses a reset token once: sets the new password, ends every sign-in on every device, and
+   * removes the token. Returns false when the token is unknown, used or expired.
+   */
+  async completeReset(token: string, passwordHash: string): Promise<boolean> {
+    const row = (await this.db
+      .prepare("SELECT user_id, expires FROM password_resets WHERE token_hash=?")
+      .get(hashToken(token))) as { user_id: string; expires: number } | undefined;
+    if (!row) return false;
+    await this.db.prepare("DELETE FROM password_resets WHERE user_id=?").run(row.user_id);
+    if (Number(row.expires) <= this.time) return false;
+    await this.setPassword(row.user_id, passwordHash);
+    await this.db.prepare("DELETE FROM auth_sessions WHERE user_id=?").run(row.user_id);
+    return true;
   }
 
   /**

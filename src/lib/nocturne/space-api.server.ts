@@ -7,6 +7,8 @@ import { connectRemoteStorage, type SpaceStorage } from "./remote-storage.server
 import { AUTH_SESSION_SECONDS, principal, type Account } from "./auth-core.server";
 import { burnPasswordCheck, hashPassword, verifyPassword } from "./passwords.server";
 import { deliver, yesNoButtons } from "./telegram-bot.server";
+import { mailConfigured, sendMail } from "./mailer.server";
+import { publicOrigin } from "./space-protocol";
 import type { TelegramInput } from "./telegram-verification.server";
 
 const name = z.string().trim().min(1, "Enter your name.").max(40),
@@ -33,6 +35,10 @@ const requestSchema = z.discriminatedUnion("op", [
     .strict(),
   z.object({ op: z.literal("auth.login"), email, password: z.string().min(1).max(200) }).strict(),
   z.object({ op: z.literal("auth.logout") }).strict(),
+  z.object({ op: z.literal("auth.forgot"), email }).strict(),
+  z
+    .object({ op: z.literal("auth.reset"), token: z.string().regex(/^[a-f0-9]{64}$/), password })
+    .strict(),
   z
     .object({ op: z.literal("auth.password"), current: z.string().min(1).max(200), next: password })
     .strict(),
@@ -81,6 +87,8 @@ const AUTH_MESSAGES: Record<string, string> = {
   "auth.register":
     "Enter your name, a valid email and a password of at least 10 characters, and confirm you are 18+.",
   "auth.login": "Enter your email and password.",
+  "auth.forgot": "Enter the email address you signed up with.",
+  "auth.reset": "Use the link from your email, and choose a password of at least 10 characters.",
   "auth.password": "Enter your current password and a new password of at least 10 characters.",
   "auth.rename": "Enter a name of up to 40 characters.",
 };
@@ -257,6 +265,49 @@ export async function handleSpaceRequest(
         { account: user, claimed: result.claimed },
         input.op === "auth.register" ? 201 : 200,
       );
+    }
+    if (input.op === "auth.forgot") {
+      // The answer is the same whether or not the email has an account, so it can't be probed.
+      const sent = {
+        ok: true,
+        message: "If that email has an account, a reset link is on its way.",
+      };
+      if (!mailConfigured())
+        throw new SpaceError(503, "Password reset by email isn't set up on this server yet.");
+      const ip = clientIp(request);
+      const allowance = await db.auth((core) => core.resetAllowance(input.email, ip));
+      if (allowance.ipBlocked)
+        throw new SpaceError(429, "Too many reset requests. Try again in an hour.");
+      const found = allowance.emailBlocked
+        ? undefined
+        : await db.auth((core) => core.findUserByEmail(input.email));
+      if (!found) {
+        // Take about as long as a real send, so timing doesn't give the answer away either.
+        await new Promise((resolve) => setTimeout(resolve, 300 + Math.random() * 300));
+        return json(sent);
+      }
+      const resetToken = await db.auth((core) => core.createReset(found.id));
+      const link = `${publicOrigin(url.origin)}/account#reset=${resetToken}`;
+      const delivered = await sendMail({
+        to: found.email,
+        subject: "Reset your BoundSome password",
+        text: `Hi ${found.name},\n\nSomeone asked to reset the password for this BoundSome account. Open this link within 30 minutes to choose a new one:\n\n${link}\n\nIt works once. If this wasn't you, ignore this email; your password stays the same.\n`,
+      });
+      // A failed send leaves a link nobody has, so remove it instead of keeping it live.
+      if (!delivered) await db.auth((core) => core.discardReset(found.id));
+      return json(sent);
+    }
+    if (input.op === "auth.reset") {
+      const passwordHash = await hashPassword(input.password);
+      const done = await db.auth((core) => core.completeReset(input.token, passwordHash));
+      if (!done)
+        throw new SpaceError(
+          400,
+          "This reset link has expired or was already used. Ask for a new one.",
+        );
+      // Signed out everywhere, including this browser; the person logs in with the new password.
+      setCookie(AUTH_COOKIE, "", 0);
+      return json({ ok: true });
     }
     if (input.op === "auth.logout") {
       if (authToken) await db.auth((core) => core.deleteSession(authToken));
