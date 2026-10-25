@@ -311,6 +311,8 @@ try {
     "AI draft must remain unsaved",
   );
   await owner.getByLabel("Title", { exact: true }).fill("Telegram browser routine");
+  await owner.getByRole("switch", { name: "Verify on Telegram", exact: true }).click();
+  await owner.getByLabel("Reward points when both say yes (0–100)", { exact: true }).fill("10");
   await owner.getByRole("button", { name: /^(Assign to|Save for) / }).click();
   await owner.getByText("Telegram browser routine", { exact: true }).waitFor();
   await owner.unroute("**/api/space");
@@ -318,7 +320,7 @@ try {
   const links = [];
   for (const page of [owner, guest]) {
     await page.goto(`${origin}/proof`);
-    await page.getByText("Telegram proof collection", { exact: true }).click();
+    await page.getByText("Telegram verification", { exact: true }).click();
     await page
       .getByLabel("Routine for this receipt", { exact: true })
       .selectOption({ label: "Telegram browser routine" });
@@ -348,20 +350,12 @@ try {
     1,
   );
   await telegram(202, `/start ${new URL(links[1]).searchParams.get("start")}`, 2);
-  const ticket = /Record ([a-f0-9-]{36})/.exec(masterStart.text)[1];
-  assert.ok((await telegram(101, `/yes ${ticket}`, 3)).text.includes("Waiting"));
-  assert.ok(
-    (await telegram(202, `/yes ${ticket}`, 4)).text.includes("Proof submitted successfully"),
-  );
-  await owner
-    .getByText("Proof submitted successfully · Master yes · Sub yes", { exact: true })
-    .waitFor();
-  await guest
-    .getByText("Proof submitted successfully · Master yes · Sub yes", { exact: true })
-    .waitFor();
-  console.log(
-    "PASS browser: authenticated test Telegram updates synchronize a receipt after both confirmations",
-  );
+  const ticket = /Reference ([a-f0-9-]{36})/.exec(masterStart.text)[1];
+  assert.ok((await telegram(101, `/yes ${ticket}`, 3)).text.includes("Nothing is completed yet"));
+  assert.ok((await telegram(202, `/yes ${ticket}`, 4)).text.includes("marked completed"));
+  await owner.getByText(/^Verified by both · completed/).waitFor();
+  await guest.getByText(/^Verified by both · completed/).waitFor();
+  console.log("PASS browser: both Telegram yeses complete the task and show on both devices");
   const firstId = await owner.getByLabel("Active space", { exact: true }).inputValue();
   await owner.goto(`${origin}/#setup`);
   await owner.getByLabel("Your name", { exact: true }).fill("Demo Maya Second");

@@ -12,6 +12,12 @@ import { telegramConfigured } from "./telegram-proof.server";
 import type { RemoteSql } from "./remote-storage.server";
 import { ACCOUNT_MEMBERSHIP_EXPIRES, isPrincipal } from "./auth-core.server";
 import { summarizeSpace } from "./dashboard";
+import {
+  TelegramVerification,
+  type Answer,
+  type TelegramInput,
+} from "./telegram-verification.server";
+import type { AsyncSql } from "./auth-core.server";
 type Row = {
   id: string;
   body: string;
@@ -70,7 +76,11 @@ export class RemoteRepositoryCore {
     return {
       telegram: {
         configured: telegramConfigured(),
-        proofs: await this.telegram.list(row.id, this.now()),
+        proofs: await this.verification().list(
+          row.id,
+          this.now(),
+          dateKey(this.now(), current.space.timeZone),
+        ),
       },
       spaces: await Promise.all(
         (await this.memberships(session)).map(async (member) => {
@@ -244,18 +254,28 @@ export class RemoteRepositoryCore {
       }
     });
   }
-  async telegramUpdate(id: number, userId: string, text: string, media: boolean) {
-    return this.transaction(
-      async () =>
-        await this.telegram.process(
-          id,
-          userId,
-          text,
-          media,
-          this.now(),
-          async (spaceId) => this.state(await this.row(spaceId)),
-          async (spaceId, state) => await this.save(await this.row(spaceId), state),
-        ),
+  private verification() {
+    return new TelegramVerification(this.db as unknown as AsyncSql);
+  }
+  async telegramUpdate(input: TelegramInput) {
+    return await this.verification().process(
+      input,
+      this.now(),
+      async (spaceId) => this.state(await this.row(spaceId)),
+      async (spaceId, state) => await this.save(await this.row(spaceId), state),
+    );
+  }
+  /** A signed-in member answers Yes/No in the app instead of Telegram. */
+  async telegramAnswer(session: string, spaceId: string, ticketId: string, answer: Answer) {
+    const member = await this.member(session, spaceId, true);
+    return await this.verification().answerInApp(
+      spaceId,
+      member.role,
+      ticketId,
+      answer,
+      this.now(),
+      async (id) => this.state(await this.row(id)),
+      async (id, state) => await this.save(await this.row(id), state),
     );
   }
   async change(

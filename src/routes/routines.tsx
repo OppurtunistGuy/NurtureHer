@@ -105,6 +105,9 @@ function RoutinesPage() {
                         ? "Neutral prompt + written check-in"
                         : "Written check-in"}{" "}
                     · Master review
+                    {r.telegramVerify
+                      ? ` · Verify on Telegram${r.rewardPoints ? ` · +${r.rewardPoints} points when both say yes` : ""}`
+                      : ""}
                   </p>
                 </div>
                 {s.viewRole === "dom" ? (
@@ -312,6 +315,46 @@ function Editor({ r: init, onDone }: { r: Routine; onDone: () => void }) {
           agreement acknowledgements. Neutral prompts do not prove liveness or prevent screenshots.
         </p>
       </div>
+      {s.space.mode === "shared" && r.proof !== "challenge" && (
+        <div className="space-y-3 rounded-md border p-4">
+          <label className="flex items-center justify-between text-sm">
+            Verify on Telegram
+            <Switch
+              aria-label="Verify on Telegram"
+              checked={!!r.telegramVerify}
+              onCheckedChange={(v) => up({ telegramVerify: v })}
+            />
+          </label>
+          <p className="text-xs leading-5 text-muted-foreground">
+            Both people answer Yes or No in their private chat with the bot, or in the app. Both yes
+            completes the task. Either No marks it not performed. No answer by the end of the day
+            leaves it not verified. Nothing is deducted automatically.
+          </p>
+          {r.telegramVerify && (
+            <div className="space-y-2">
+              <Label htmlFor="routine-reward">Reward points when both say yes (0–100)</Label>
+              <Input
+                id="routine-reward"
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={r.rewardPoints ?? 0}
+                onChange={(e) => {
+                  const value = Math.round(Number(e.target.value));
+                  up({
+                    rewardPoints: Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0,
+                  });
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                0 means nothing is added automatically. Added once per day, and can be reversed with
+                a reason on the Points page.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
       {(
         [
           ["enabled", "Enabled"],

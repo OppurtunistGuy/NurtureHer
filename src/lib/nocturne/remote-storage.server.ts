@@ -3,6 +3,7 @@ import { createClient, type Client, type Transaction, type InValue } from "@libs
 import { RemoteRepositoryCore } from "./remote-space-core.server";
 import type { SpaceRepository } from "./space-repository.server";
 import { AUTH_SCHEMA, AuthCore } from "./auth-core.server";
+import { VERIFY_SCHEMA } from "./telegram-verification.server";
 
 type SqlExecutor = Pick<Client, "execute"> | Pick<Transaction, "execute">;
 /** Request-local SQL connection. Never share an open transaction between requests. */
@@ -27,6 +28,7 @@ const schema = [
   "CREATE TABLE IF NOT EXISTS telegram_members (space_id TEXT NOT NULL REFERENCES spaces(id), role TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY(space_id,role), UNIQUE(space_id,user_id))",
   "CREATE TABLE IF NOT EXISTS telegram_updates (id INTEGER PRIMARY KEY, at INTEGER NOT NULL)",
   ...AUTH_SCHEMA,
+  ...VERIFY_SCHEMA,
 ];
 
 export type SpaceStorage = {
@@ -40,6 +42,7 @@ export type SpaceStorage = {
       | "change"
       | "openTelegram"
       | "telegramUpdate"
+      | "telegramAnswer"
   ]: (
     ...args: Parameters<SpaceRepository[K]>
   ) => ReturnType<SpaceRepository[K]> | Promise<ReturnType<SpaceRepository[K]>>;
@@ -127,6 +130,9 @@ export class RemoteSpaceRepository implements SpaceStorage {
   }
   telegramUpdate(...args: Parameters<SpaceRepository["telegramUpdate"]>) {
     return this.invoke("telegramUpdate", args);
+  }
+  telegramAnswer(...args: Parameters<SpaceRepository["telegramAnswer"]>) {
+    return this.invoke("telegramAnswer", args);
   }
   close() {
     this.client.close();

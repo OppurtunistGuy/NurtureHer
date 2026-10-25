@@ -52,6 +52,7 @@ describe("durable remote storage", () => {
         requiresAck: false,
         optInDaily: false,
         proof: "text",
+        telegramVerify: true,
       },
     });
     await command(master.token, { type: "agreement.ack" });
@@ -59,25 +60,31 @@ describe("durable remote storage", () => {
     const m = await first.openTelegram(master.token, id, "daily");
     const s = await second.openTelegram(sub.token, id, "daily");
     expect(m.ticketId).toBe(s.ticketId);
-    await first.telegramUpdate(
-      1,
-      "101",
-      `/start ${new URL(m.link).searchParams.get("start")}`,
-      false,
+    const send = async (updateId: number, userId: string, text: string) =>
+      await first.telegramUpdate({ updateId, userId, text, media: false });
+    await send(1, "101", `/start ${new URL(m.link).searchParams.get("start")}`);
+    await second.telegramUpdate({
+      updateId: 2,
+      userId: "202",
+      text: `/start ${new URL(s.link).searchParams.get("start")}`,
+      media: false,
+    });
+    expect((await send(3, "101", `/yes ${m.ticketId}`)).reply).toContain(
+      "Nothing is completed yet",
     );
-    await second.telegramUpdate(
-      2,
-      "202",
-      `/start ${new URL(s.link).searchParams.get("start")}`,
-      false,
-    );
-    expect(await first.telegramUpdate(3, "101", `/yes ${m.ticketId}`, false)).toContain("Waiting");
     expect((await second.read(sub.token, id)).state.submissions).toHaveLength(0);
-    expect(await second.telegramUpdate(4, "202", `/yes ${s.ticketId}`, false)).toContain(
-      "Proof submitted successfully",
-    );
-    await first.telegramUpdate(4, "202", `/yes ${s.ticketId}`, false);
-    expect((await second.read(sub.token, id)).state.submissions).toHaveLength(1);
+    const done = await second.telegramUpdate({
+      updateId: 4,
+      userId: "202",
+      text: `/yes ${s.ticketId}`,
+      media: false,
+    });
+    expect(done.reply).toContain("marked completed");
+    // The same update delivered to another instance is ignored.
+    expect((await send(4, "202", `/yes ${s.ticketId}`)).reply).toContain("already received");
+    const submissions = (await second.read(sub.token, id)).state.submissions!;
+    expect(submissions).toHaveLength(1);
+    expect(submissions[0]!.status).toBe("accepted");
     await command(sub.token, { type: "pause", signal: "RED", reason: "Check in" });
     await expect(first.openTelegram(master.token, id, "daily")).rejects.toMatchObject({
       status: 400,
