@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 import type { Submission } from "@/lib/nocturne/types";
 import { TelegramProof } from "@/components/nocturne/TelegramProof";
+import { useUnsavedChanges } from "@/lib/nocturne/unsaved";
+import { useSubName } from "@/lib/nocturne/profile";
 
 export const Route = createFileRoute("/proof")({
   head: () => ({ meta: [{ title: "Proof review — BoundSome" }] }),
@@ -76,6 +78,8 @@ function ProofPage() {
 function ReviewCard({ entry: x }: { entry: Submission }) {
   const s = useNocturne(),
     [response, setResponse] = useState("");
+  const subName = useSubName();
+  useUnsavedChanges(!!response.trim(), "a review response");
   const decide = async (decision: "accepted" | "revision" | "rejected") => {
     if ((await actions.review(x.id, decision, response.trim())).ok)
       toast.success("Review decision recorded");
@@ -133,7 +137,7 @@ function ReviewCard({ entry: x }: { entry: Submission }) {
           />
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={() => decide("accepted")}>
-              Accept check-in
+              {subName ? `Accept ${subName}'s check-in` : "Accept check-in"}
             </Button>
             <Button
               size="sm"

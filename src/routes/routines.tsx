@@ -23,6 +23,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useUnsavedChanges } from "@/lib/nocturne/unsaved";
+import { useProfile, useSubName } from "@/lib/nocturne/profile";
 
 export const Route = createFileRoute("/routines")({
   head: () => ({
@@ -52,10 +54,21 @@ const blank = (): Routine => ({
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
 function RoutinesPage() {
-  const s = useNocturne();
+  const s = useNocturne(),
+    profile = useProfile();
   const [edit, setEdit] = useState<Routine | null>(null);
+  // In a Sub's profile, AI drafting has its own section; the routine list stays under Routines.
+  const draftingOnly = profile?.section === "drafting",
+    showDraft = !profile || draftingOnly;
   return (
-    <AppShell eyebrow="Assigned structure. Clear expectations." title="Routines">
+    <AppShell
+      eyebrow={
+        draftingOnly
+          ? "Draft with AI. Nothing saves until you do."
+          : "Assigned structure. Clear expectations."
+      }
+      title={draftingOnly ? "AI drafting" : "Routines"}
+    >
       {edit && s.viewRole === "dom" ? (
         <Editor r={edit} onDone={() => setEdit(null)} />
       ) : (
@@ -66,10 +79,14 @@ function RoutinesPage() {
                 ? "Create and maintain the daily structure here. Check-ins and decisions stay on their own pages."
                 : "Read your assigned routines here. Request a change rather than editing them directly."}
             </p>
-            {s.viewRole === "dom" && <Button onClick={() => setEdit(blank())}>New routine</Button>}
+            {s.viewRole === "dom" && !draftingOnly && (
+              <Button onClick={() => setEdit(blank())}>New routine</Button>
+            )}
           </div>
-          {s.viewRole === "dom" && <RoutineDraft key={s.space.id ?? "demo"} onDraft={setEdit} />}
-          <ul className="mt-6 divide-y divide-border">
+          {s.viewRole === "dom" && showDraft && (
+            <RoutineDraft key={s.space.id ?? "demo"} onDraft={setEdit} />
+          )}
+          <ul className={`mt-6 divide-y divide-border ${draftingOnly ? "hidden" : ""}`}>
             {s.routines.map((r) => (
               <li key={r.id} className="flex items-center justify-between gap-3 py-3">
                 <div className="min-w-0 text-left">
@@ -88,6 +105,9 @@ function RoutinesPage() {
                         ? "Neutral prompt + written check-in"
                         : "Written check-in"}{" "}
                     · Master review
+                    {r.telegramVerify
+                      ? ` · Verify on Telegram${r.rewardPoints ? ` · +${r.rewardPoints} points when both say yes` : ""}`
+                      : ""}
                   </p>
                 </div>
                 {s.viewRole === "dom" ? (
@@ -124,6 +144,8 @@ function RoutinesPage() {
 function Editor({ r: init, onDone }: { r: Routine; onDone: () => void }) {
   const s = useNocturne();
   const [r, setR] = useState(init);
+  const subName = useSubName();
+  useUnsavedChanges(JSON.stringify(r) !== JSON.stringify(init), "a routine");
   const up = (p: Partial<Routine>) => setR({ ...r, ...p });
   const valid =
     r.title.trim() &&
@@ -293,6 +315,46 @@ function Editor({ r: init, onDone }: { r: Routine; onDone: () => void }) {
           agreement acknowledgements. Neutral prompts do not prove liveness or prevent screenshots.
         </p>
       </div>
+      {s.space.mode === "shared" && r.proof !== "challenge" && (
+        <div className="space-y-3 rounded-md border p-4">
+          <label className="flex items-center justify-between text-sm">
+            Verify on Telegram
+            <Switch
+              aria-label="Verify on Telegram"
+              checked={!!r.telegramVerify}
+              onCheckedChange={(v) => up({ telegramVerify: v })}
+            />
+          </label>
+          <p className="text-xs leading-5 text-muted-foreground">
+            Both people answer Yes or No in their private chat with the bot, or in the app. Both yes
+            completes the task. Either No marks it not performed. No answer by the end of the day
+            leaves it not verified. Nothing is deducted automatically.
+          </p>
+          {r.telegramVerify && (
+            <div className="space-y-2">
+              <Label htmlFor="routine-reward">Reward points when both say yes (0–100)</Label>
+              <Input
+                id="routine-reward"
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={r.rewardPoints ?? 0}
+                onChange={(e) => {
+                  const value = Math.round(Number(e.target.value));
+                  up({
+                    rewardPoints: Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0,
+                  });
+                }}
+              />
+              <p className="text-xs text-muted-foreground">
+                0 means nothing is added automatically. Added once per day, and can be reversed with
+                a reason on the Points page.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
       {(
         [
           ["enabled", "Enabled"],
@@ -307,7 +369,11 @@ function Editor({ r: init, onDone }: { r: Routine; onDone: () => void }) {
       ))}
       <div className="flex flex-wrap gap-2 pt-2">
         <Button type="submit" disabled={!valid}>
-          Save
+          {subName
+            ? s.routines.some((x) => x.id === r.id)
+              ? `Save for ${subName}`
+              : `Assign to ${subName}`
+            : "Save"}
         </Button>
         <Button type="button" variant="ghost" onClick={onDone}>
           Cancel

@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as AgreementsRouteImport } from './routes/agreements'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DiscussionRouteImport } from './routes/discussion'
 import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as NotesRouteImport } from './routes/notes'
@@ -24,6 +25,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as TodayRouteImport } from './routes/today'
 import { Route as ApiSpaceRouteImport } from './routes/api.space'
 import { Route as ApiSpaceTelegramRouteImport } from './routes/api.space.telegram'
+import { Route as SubsSpaceIdSectionRouteImport } from './routes/subs.$spaceId.$section'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -43,6 +45,11 @@ const ActivityRoute = ActivityRouteImport.update({
 const AgreementsRoute = AgreementsRouteImport.update({
   id: '/agreements',
   path: '/agreements',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DiscussionRoute = DiscussionRouteImport.update({
@@ -100,12 +107,18 @@ const ApiSpaceTelegramRoute = ApiSpaceTelegramRouteImport.update({
   path: '/telegram',
   getParentRoute: () => ApiSpaceRoute,
 } as any)
+const SubsSpaceIdSectionRoute = SubsSpaceIdSectionRouteImport.update({
+  id: '/subs/$spaceId/$section',
+  path: '/subs/$spaceId/$section',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
   '/agreements': typeof AgreementsRoute
+  '/dashboard': typeof DashboardRoute
   '/discussion': typeof DiscussionRoute
   '/goals': typeof GoalsRoute
   '/notes': typeof NotesRoute
@@ -117,12 +130,14 @@ export interface FileRoutesByFullPath {
   '/today': typeof TodayRoute
   '/api/space': typeof ApiSpaceRouteWithChildren
   '/api/space/telegram': typeof ApiSpaceTelegramRoute
+  '/subs/$spaceId/$section': typeof SubsSpaceIdSectionRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
   '/agreements': typeof AgreementsRoute
+  '/dashboard': typeof DashboardRoute
   '/discussion': typeof DiscussionRoute
   '/goals': typeof GoalsRoute
   '/notes': typeof NotesRoute
@@ -134,6 +149,7 @@ export interface FileRoutesByTo {
   '/today': typeof TodayRoute
   '/api/space': typeof ApiSpaceRouteWithChildren
   '/api/space/telegram': typeof ApiSpaceTelegramRoute
+  '/subs/$spaceId/$section': typeof SubsSpaceIdSectionRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -141,6 +157,7 @@ export interface FileRoutesById {
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
   '/agreements': typeof AgreementsRoute
+  '/dashboard': typeof DashboardRoute
   '/discussion': typeof DiscussionRoute
   '/goals': typeof GoalsRoute
   '/notes': typeof NotesRoute
@@ -152,6 +169,7 @@ export interface FileRoutesById {
   '/today': typeof TodayRoute
   '/api/space': typeof ApiSpaceRouteWithChildren
   '/api/space/telegram': typeof ApiSpaceTelegramRoute
+  '/subs/$spaceId/$section': typeof SubsSpaceIdSectionRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -160,6 +178,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/activity'
     | '/agreements'
+    | '/dashboard'
     | '/discussion'
     | '/goals'
     | '/notes'
@@ -171,12 +190,14 @@ export interface FileRouteTypes {
     | '/today'
     | '/api/space'
     | '/api/space/telegram'
+    | '/subs/$spaceId/$section'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/account'
     | '/activity'
     | '/agreements'
+    | '/dashboard'
     | '/discussion'
     | '/goals'
     | '/notes'
@@ -188,12 +209,14 @@ export interface FileRouteTypes {
     | '/today'
     | '/api/space'
     | '/api/space/telegram'
+    | '/subs/$spaceId/$section'
   id:
     | '__root__'
     | '/'
     | '/account'
     | '/activity'
     | '/agreements'
+    | '/dashboard'
     | '/discussion'
     | '/goals'
     | '/notes'
@@ -205,6 +228,7 @@ export interface FileRouteTypes {
     | '/today'
     | '/api/space'
     | '/api/space/telegram'
+    | '/subs/$spaceId/$section'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -212,6 +236,7 @@ export interface RootRouteChildren {
   AccountRoute: typeof AccountRoute
   ActivityRoute: typeof ActivityRoute
   AgreementsRoute: typeof AgreementsRoute
+  DashboardRoute: typeof DashboardRoute
   DiscussionRoute: typeof DiscussionRoute
   GoalsRoute: typeof GoalsRoute
   NotesRoute: typeof NotesRoute
@@ -222,6 +247,7 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   TodayRoute: typeof TodayRoute
   ApiSpaceRoute: typeof ApiSpaceRouteWithChildren
+  SubsSpaceIdSectionRoute: typeof SubsSpaceIdSectionRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -252,6 +278,13 @@ declare module '@tanstack/react-router' {
       path: '/agreements'
       fullPath: '/agreements'
       preLoaderRoute: typeof AgreementsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/discussion': {
@@ -331,6 +364,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSpaceTelegramRouteImport
       parentRoute: typeof ApiSpaceRoute
     }
+    '/subs/$spaceId/$section': {
+      id: '/subs/$spaceId/$section'
+      path: '/subs/$spaceId/$section'
+      fullPath: '/subs/$spaceId/$section'
+      preLoaderRoute: typeof SubsSpaceIdSectionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -351,6 +391,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccountRoute: AccountRoute,
   ActivityRoute: ActivityRoute,
   AgreementsRoute: AgreementsRoute,
+  DashboardRoute: DashboardRoute,
   DiscussionRoute: DiscussionRoute,
   GoalsRoute: GoalsRoute,
   NotesRoute: NotesRoute,
@@ -361,6 +402,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   TodayRoute: TodayRoute,
   ApiSpaceRoute: ApiSpaceRouteWithChildren,
+  SubsSpaceIdSectionRoute: SubsSpaceIdSectionRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

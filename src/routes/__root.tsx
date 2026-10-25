@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 
 import { useNocturne } from "@/lib/nocturne/store";
+import { UnsavedChangesGuard } from "@/components/nocturne/UnsavedChangesGuard";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -111,6 +112,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <Outlet key={state.space.id ?? "demo"} />
+      <UnsavedChangesGuard />
       <Toaster position="top-center" theme="dark" />
     </QueryClientProvider>
   );

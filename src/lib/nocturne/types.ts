@@ -9,7 +9,8 @@ export type TaskStatus =
   | "extension"
   | "excused"
   | "skipped"
-  | "paused";
+  | "paused"
+  | "not_performed";
 
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   pending: "Pending",
@@ -21,6 +22,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   excused: "Excused",
   skipped: "Skipped by agreement",
   paused: "Paused",
+  not_performed: "Not performed",
 };
 
 export type Recurrence =
@@ -40,6 +42,10 @@ export interface Routine {
   optInDaily: boolean;
   proof?: "confirmation" | "text" | "challenge";
   revision?: number;
+  /** Both people confirm on Telegram; either No marks the task not performed. */
+  telegramVerify?: boolean | undefined;
+  /** Reward added once when both say yes. 0 or absent = nothing automatic. */
+  rewardPoints?: number | undefined;
 }
 
 export interface TaskRecord {
