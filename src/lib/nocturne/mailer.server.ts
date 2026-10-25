@@ -85,6 +85,7 @@ const liveSend: Mailer = async (mail) => {
   if (!request) return false;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     let status = 0;
+    let reason = "";
     try {
       const response = await fetch(request.url, {
         method: "POST",
@@ -94,11 +95,19 @@ const liveSend: Mailer = async (mail) => {
       });
       if (response.ok) return true;
       status = response.status;
+      // The provider's own error message (e.g. "Key not found"). It names no recipient and holds
+      // no secret of ours, so it is safe to log and tells us why a send was refused.
+      reason = (await response.text().catch(() => "")).slice(0, 200);
     } catch {
       status = -1; // network error or timeout
     }
-    // Never log the address, key or body; the status is enough to debug.
-    console.error("Email send failed", status === -1 ? "network" : status, `attempt ${attempt}`);
+    // Never log our own key, the address or the message body.
+    console.error(
+      "Email send failed",
+      status === -1 ? "network" : status,
+      `attempt ${attempt}`,
+      reason,
+    );
     if (status !== -1 && !retryable(status)) return false;
     if (attempt < ATTEMPTS) await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
   }
