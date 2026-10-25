@@ -6,6 +6,8 @@ import { timingSafeEqual } from "node:crypto";
 import { connectRemoteStorage, type SpaceStorage } from "./remote-storage.server";
 import { AUTH_SESSION_SECONDS, principal, type Account } from "./auth-core.server";
 import { burnPasswordCheck, hashPassword, verifyPassword } from "./passwords.server";
+import { deliver, yesNoButtons } from "./telegram-bot.server";
+import type { TelegramInput } from "./telegram-verification.server";
 
 const name = z.string().trim().min(1, "Enter your name.").max(40),
   token = z.string().regex(/^[a-f0-9]{64}$/),
@@ -54,6 +56,14 @@ const requestSchema = z.discriminatedUnion("op", [
       op: z.literal("telegram.open"),
       spaceId: z.string().uuid(),
       routineId: z.string().min(1).max(100),
+    })
+    .strict(),
+  z
+    .object({
+      op: z.literal("telegram.answer"),
+      spaceId: z.string().uuid(),
+      ticketId: z.string().uuid(),
+      answer: z.enum(["yes", "no"]),
     })
     .strict(),
   z
@@ -279,6 +289,11 @@ export async function handleSpaceRequest(
       });
       return json({ ok: true });
     }
+    if (input.op === "telegram.answer") {
+      const result = await db.telegramAnswer(session, input.spaceId, input.ticketId, input.answer);
+      await deliver(result.notify);
+      return json({ message: result.reply });
+    }
     if (input.op === "telegram.open")
       return json(await db.openTelegram(session, input.spaceId, input.routineId));
     if (input.op === "draft") {
@@ -375,6 +390,7 @@ export async function handleTelegramRequest(request: Request, suppliedRepository
         update_id: z.number().int().nonnegative(),
         message: z
           .object({
+            message_id: z.number().int().nonnegative().optional(),
             from: z.object({ id: z.number().int().positive(), is_bot: z.boolean().optional() }),
             chat: z.object({ id: z.number().int(), type: z.string() }),
             text: z.string().max(4096).optional(),
@@ -384,31 +400,76 @@ export async function handleTelegramRequest(request: Request, suppliedRepository
             document: z.unknown().optional(),
           })
           .optional(),
+        // A tap on a Yes/No button.
+        callback_query: z
+          .object({
+            id: z.string().max(128),
+            from: z.object({ id: z.number().int().positive(), is_bot: z.boolean().optional() }),
+            data: z.string().max(64).optional(),
+            message: z
+              .object({ chat: z.object({ id: z.number().int(), type: z.string() }) })
+              .optional(),
+          })
+          .optional(),
       })
       .parse(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-    const message = update.message;
-    if (
-      !message ||
-      message.from.is_bot ||
-      message.chat.type !== "private" ||
-      message.chat.id !== message.from.id
-    )
-      return json({ ok: true });
-    let text: string;
+    const message = update.message,
+      tap = update.callback_query;
+    // Private chats only: anything from a group or channel is ignored.
+    const privateChat = (
+      from: { id: number; is_bot?: boolean | undefined },
+      chat?: { id: number; type: string },
+    ) => !from.is_bot && chat?.type === "private" && chat.id === from.id;
+    let input: TelegramInput;
+    if (tap) {
+      const choice = /^(y|n):([a-f0-9-]{36})$/.exec(tap.data ?? "");
+      if (!choice || !privateChat(tap.from, tap.message?.chat))
+        return json({ method: "answerCallbackQuery", callback_query_id: tap.id });
+      input = {
+        updateId: update.update_id,
+        userId: String(tap.from.id),
+        text: "",
+        media: false,
+        answer: { ticketId: choice[2]!, value: choice[1] === "y" ? "yes" : "no" },
+      };
+    } else if (message && privateChat(message.from, message.chat)) {
+      input = {
+        updateId: update.update_id,
+        userId: String(message.from.id),
+        text: message.text || message.caption || "",
+        media: !!(message.photo || message.video || message.document),
+        ...(message.message_id !== undefined ? { messageId: message.message_id } : {}),
+      };
+    } else return json({ ok: true });
+    let reply: string,
+      buttons: string | undefined,
+      notify: Parameters<typeof deliver>[0] = [];
     try {
-      text = await (suppliedRepository ?? getRepository()).telegramUpdate(
-        update.update_id,
-        String(message.from.id),
-        message.text || message.caption || "",
-        !!(message.photo || message.video || message.document),
-      );
+      const result = await (suppliedRepository ?? getRepository()).telegramUpdate(input);
+      ({ reply, buttons, notify } = result);
     } catch (error) {
       if (error instanceof Error && "code" in error)
         return json({ error: "Storage unavailable; retry this update." }, 503);
-      text =
-        "This record cannot be updated. Check the app for consent, preparation and current task status. Nothing was submitted.";
+      reply =
+        "This record cannot be updated. Check the app for consent, preparation and current task status. Nothing was changed.";
     }
-    return json({ method: "sendMessage", chat_id: message.chat.id, text, protect_content: true });
+    // The result is committed; now tell the other person. A failed send never undoes it.
+    if (tap) {
+      await deliver([{ chatId: input.userId, text: reply }, ...notify]);
+      return json({
+        method: "answerCallbackQuery",
+        callback_query_id: tap.id,
+        text: reply.slice(0, 200),
+      });
+    }
+    await deliver(notify);
+    return json({
+      method: "sendMessage",
+      chat_id: message!.chat.id,
+      text: reply,
+      protect_content: true,
+      ...(buttons ? { reply_markup: yesNoButtons(buttons) } : {}),
+    });
   } catch {
     return json({ error: "Invalid update." }, 400);
   }

@@ -26,11 +26,18 @@ const FILTERS: { value: DashboardFilter; label: string }[] = [
   { value: "waiting", label: "Waiting to join" },
 ];
 
-/** Where a card opens. Phase 3 replaces this with the per-Sub profile. */
+/** A Master opens the Sub's profile; a Sub opens their own pages for that relationship. */
 const openRelationship = async (
   navigate: ReturnType<typeof useNavigate>,
-  card: Pick<DashboardCard, "id">,
+  card: Pick<DashboardCard, "id" | "myRole">,
 ) => {
+  if (card.myRole === "dom") {
+    await navigate({
+      to: "/subs/$spaceId/$section",
+      params: { spaceId: card.id, section: "overview" },
+    });
+    return;
+  }
   const result = await spaceActions.open(card.id);
   if (result.ok) await navigate({ to: "/today" });
 };
@@ -289,7 +296,7 @@ function Card({
         <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
           <Stat
             label="Today"
-            value={`${card.today.completed} done · ${card.today.pending} pending`}
+            value={`${card.today.completed} done · ${card.today.pending} pending${card.today.notPerformed ? ` · ${card.today.notPerformed} not performed` : ""}`}
           />
           <Stat
             label={card.myRole === "dom" ? "To review" : "Waiting for review"}
@@ -372,9 +379,14 @@ function Status({ card }: { card: DashboardCard }) {
       ]
     : !card.paired
       ? ["Waiting to join", "text-muted-foreground"]
-      : card.pendingReview > 0
-        ? [card.myRole === "dom" ? "Review waiting" : "Sent for review", "border-gold/60 text-gold"]
-        : ["Active", "text-muted-foreground"];
+      : card.today.notPerformed > 0
+        ? ["Not performed today", "border-destructive/60 text-destructive"]
+        : card.pendingReview > 0
+          ? [
+              card.myRole === "dom" ? "Review waiting" : "Sent for review",
+              "border-gold/60 text-gold",
+            ]
+          : ["Active", "text-muted-foreground"];
   return (
     <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[0.68rem] ${tone}`}>
       {text}

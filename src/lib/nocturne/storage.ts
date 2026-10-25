@@ -17,6 +17,7 @@ const status = z.enum([
   "excused",
   "skipped",
   "paused",
+  "not_performed",
 ]);
 const proof = z.enum(["confirmation", "text", "challenge"]);
 const recurrence = z.discriminatedUnion("kind", [
@@ -53,6 +54,9 @@ export const savedStateSchema = z.object({
       optInDaily: z.boolean(),
       proof: proof.default("text"),
       revision: z.number().default(1),
+      // Two-person Telegram verification: both must say yes for the task to pass.
+      telegramVerify: z.boolean().optional(),
+      rewardPoints: z.number().int().min(0).max(100).optional(),
     }),
   ),
   tasks: z.record(

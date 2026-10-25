@@ -5,11 +5,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { useNocturne, useSpaceConnection } from "@/lib/nocturne/store";
 import { savedStateSchema } from "@/lib/nocturne/storage";
 import type { Routine } from "@/lib/nocturne/types";
+import { useUnsavedChanges } from "@/lib/nocturne/unsaved";
 
 export function RoutineDraft({ onDraft }: { onDraft: (routine: Routine) => void }) {
   const s = useNocturne();
   const connection = useSpaceConnection();
   const [prompt, setPrompt] = useState("");
+  useUnsavedChanges(!!prompt.trim(), "an AI draft request");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const request = useRef<AbortController | null>(null);

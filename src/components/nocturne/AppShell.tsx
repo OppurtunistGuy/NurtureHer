@@ -40,6 +40,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { accountActions, useAccount } from "@/lib/nocturne/account";
+import { SECTIONS, useProfile, type Profile } from "@/lib/nocturne/profile";
+import { confirmDiscard } from "@/lib/nocturne/unsaved";
 import { toast } from "sonner";
 
 /** Signed-in person, with My account, Dashboard and Sign out. */
@@ -70,6 +72,7 @@ export function AccountMenu() {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={async () => {
+            if (!(await confirmDiscard())) return;
             const result = await accountActions.logout();
             if (result.ok) await navigate({ to: "/", replace: true });
             else toast.error(result.error);
@@ -111,6 +114,7 @@ export function AppShell({
   const s = useNocturne(),
     connection = useSpaceConnection(),
     me = useAccount(),
+    profile = useProfile(),
     { pathname } = useLocation();
   useReminders();
   if (!s.onboarded)
@@ -139,7 +143,11 @@ export function AppShell({
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
-          <Link to="/today" aria-label="BoundSome home" className="shrink-0">
+          <Link
+            to={me.status === "signedIn" ? "/dashboard" : "/today"}
+            aria-label="BoundSome home"
+            className="shrink-0"
+          >
             <img
               src="/branding/boundsome-logo.webp"
               alt="BoundSome"
@@ -163,7 +171,8 @@ export function AppShell({
             <AccountMenu />
           </div>
         </div>
-        {s.space.mode === "shared" && (
+        {profile && <ProfileBar profile={profile} />}
+        {s.space.mode === "shared" && !profile && (
           <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 pb-3">
             <label htmlFor="active-space" className="sr-only">
               Active space
@@ -173,7 +182,12 @@ export function AppShell({
               className="native-select min-w-0 flex-1 text-sm"
               value={s.space.id}
               disabled={connection.busy}
-              onChange={(e) => void spaceActions.open(e.target.value)}
+              onChange={async (e) => {
+                const next = e.target.value;
+                // Switching remounts every page, so ask before any unsaved edit is lost.
+                if (await confirmDiscard()) void spaceActions.open(next);
+                else e.target.value = s.space.id ?? "";
+              }}
             >
               {connection.spaces.map((space) => (
                 <option key={space.id} value={space.id}>
@@ -195,19 +209,21 @@ export function AppShell({
           </div>
         )}
         <nav
-          className="mx-auto hidden max-w-3xl items-center justify-between gap-1 overflow-x-auto px-3 pb-3 md:flex"
-          aria-label="Main"
+          className={`mx-auto hidden max-w-3xl items-center gap-1 px-3 pb-3 md:flex ${profile ? "flex-wrap" : "justify-between overflow-x-auto"}`}
+          aria-label={profile ? `Sections for ${profile.subName}` : "Main"}
         >
-          {NAV.map((n) => (
-            <Link
-              key={n.to}
-              to={n.to}
-              className="whitespace-nowrap rounded-md px-2 py-2 text-xs text-muted-foreground hover:text-foreground"
-              activeProps={{ className: "bg-secondary text-ivory" }}
-            >
-              {n.label}
-            </Link>
-          ))}
+          {profile && <ProfileSections profile={profile} />}
+          {!profile &&
+            NAV.map((n) => (
+              <Link
+                key={n.to}
+                to={n.to}
+                className="whitespace-nowrap rounded-md px-2 py-2 text-xs text-muted-foreground hover:text-foreground"
+                activeProps={{ className: "bg-secondary text-ivory" }}
+              >
+                {n.label}
+              </Link>
+            ))}
         </nav>
         <div className="border-t bg-wine-soft/20">
           <p className="mx-auto max-w-3xl px-4 py-2 text-[0.68rem] text-muted-foreground">
@@ -274,7 +290,8 @@ export function AppShell({
           disabled={
             (s.pause.active && !allowDuringPause) ||
             connection.busy ||
-            (s.space.mode === "shared" && connection.status === "offline")
+            (s.space.mode === "shared" && connection.status === "offline") ||
+            (!!profile && s.space.id !== profile.spaceId)
           }
           className="min-w-0 border-0 p-0"
         >
@@ -288,56 +305,197 @@ export function AppShell({
         className="fixed inset-x-0 bottom-0 z-30 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
         aria-label="Mobile navigation"
       >
-        <ul className="grid grid-cols-5">
-          {MOBILE.map((n) => {
-            const Icon = n.icon;
-            return (
-              <li key={n.to}>
-                <Link
-                  to={n.to}
-                  aria-current={pathname === n.to ? "page" : undefined}
-                  className={`flex flex-col items-center gap-1 py-3 text-[0.65rem] ${pathname === n.to ? "text-gold" : "text-muted-foreground"}`}
-                >
-                  <Icon className="h-5 w-5" />
-                  {n.label === "Proof review" ? "Review" : n.label}
-                </Link>
-              </li>
-            );
-          })}
-          <li>
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button
-                  variant="ghost"
-                  className="flex h-auto w-full flex-col gap-1 rounded-none py-3 text-[0.65rem] text-muted-foreground"
-                >
-                  <MoreHorizontal className="h-5 w-5" />
-                  More
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="bottom">
-                <SheetHeader>
-                  <SheetTitle>Explore your space</SheetTitle>
-                </SheetHeader>
-                <nav className="mt-5 grid grid-cols-2 gap-2" aria-label="More pages">
-                  {NAV.filter((n) => !MOBILE.some((m) => m.to === n.to)).map((n) => (
-                    <SheetClose asChild key={n.to}>
-                      <Link to={n.to} className="rounded-md border px-4 py-3 text-sm">
-                        {n.label}
+        {profile ? (
+          <ProfileMobileNav profile={profile} />
+        ) : (
+          <ul className="grid grid-cols-5">
+            {MOBILE.map((n) => {
+              const Icon = n.icon;
+              return (
+                <li key={n.to}>
+                  <Link
+                    to={n.to}
+                    aria-current={pathname === n.to ? "page" : undefined}
+                    className={`flex flex-col items-center gap-1 py-3 text-[0.65rem] ${pathname === n.to ? "text-gold" : "text-muted-foreground"}`}
+                  >
+                    <Icon className="h-5 w-5" />
+                    {n.label === "Proof review" ? "Review" : n.label}
+                  </Link>
+                </li>
+              );
+            })}
+            <li>
+              <Sheet>
+                <SheetTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="flex h-auto w-full flex-col gap-1 rounded-none py-3 text-[0.65rem] text-muted-foreground"
+                  >
+                    <MoreHorizontal className="h-5 w-5" />
+                    More
+                  </Button>
+                </SheetTrigger>
+                <SheetContent side="bottom">
+                  <SheetHeader>
+                    <SheetTitle>Explore your space</SheetTitle>
+                  </SheetHeader>
+                  <nav className="mt-5 grid grid-cols-2 gap-2" aria-label="More pages">
+                    {NAV.filter((n) => !MOBILE.some((m) => m.to === n.to)).map((n) => (
+                      <SheetClose asChild key={n.to}>
+                        <Link to={n.to} className="rounded-md border px-4 py-3 text-sm">
+                          {n.label}
+                        </Link>
+                      </SheetClose>
+                    ))}
+                    <SheetClose asChild>
+                      <Link to="/settings" className="rounded-md border px-4 py-3 text-sm">
+                        {s.space.mode === "demo" ? "Settings & demo roles" : "Settings"}
                       </Link>
                     </SheetClose>
-                  ))}
-                  <SheetClose asChild>
-                    <Link to="/settings" className="rounded-md border px-4 py-3 text-sm">
-                      {s.space.mode === "demo" ? "Settings & demo roles" : "Settings"}
-                    </Link>
-                  </SheetClose>
-                </nav>
-              </SheetContent>
-            </Sheet>
-          </li>
-        </ul>
+                  </nav>
+                </SheetContent>
+              </Sheet>
+            </li>
+          </ul>
+        )}
       </nav>
     </div>
+  );
+}
+
+/** Who is being managed, a switcher between Subs and a way back to All Subs. */
+function ProfileBar({ profile }: { profile: Profile }) {
+  const connection = useSpaceConnection(),
+    navigate = useNavigate();
+  const subs = connection.spaces.filter((space) => space.role === "dom");
+  return (
+    <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-3 px-4 pb-3">
+      <Link to="/dashboard" className="shrink-0 text-xs text-gold underline">
+        ← All Subs
+      </Link>
+      <span
+        aria-hidden
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-wine-soft/50 font-display text-ivory"
+      >
+        {profile.subName.slice(0, 1).toUpperCase()}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[0.65rem] uppercase tracking-widest text-muted-foreground">Managing</p>
+        <label htmlFor="profile-selector" className="sr-only">
+          Switch Sub
+        </label>
+        <select
+          id="profile-selector"
+          className="native-select w-full text-sm"
+          value={profile.spaceId}
+          disabled={connection.busy}
+          onChange={(e) =>
+            // Navigation, not sign-in: the router asks before discarding unsaved edits.
+            void navigate({
+              to: "/subs/$spaceId/$section",
+              params: { spaceId: e.target.value, section: profile.section },
+            })
+          }
+        >
+          {subs.map((space) => (
+            <option key={space.id} value={space.id}>
+              {space.paired ? space.partnerName : "Invitation not used yet"}
+              {space.paused ? " · paused" : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function ProfileSections({ profile }: { profile: Profile }) {
+  return (
+    <>
+      {SECTIONS.map((section) => (
+        <Link
+          key={section.id}
+          to="/subs/$spaceId/$section"
+          params={{ spaceId: profile.spaceId, section: section.id }}
+          aria-current={profile.section === section.id ? "page" : undefined}
+          className={`whitespace-nowrap rounded-md px-2 py-2 text-xs ${profile.section === section.id ? "bg-secondary text-ivory" : "text-muted-foreground hover:text-foreground"}`}
+        >
+          {section.label}
+        </Link>
+      ))}
+    </>
+  );
+}
+
+const MOBILE_SECTIONS = ["overview", "routines", "submissions", "points"] as const;
+function ProfileMobileNav({ profile }: { profile: Profile }) {
+  const short: Record<string, string> = {
+    overview: "Overview",
+    routines: "Routines",
+    submissions: "Review",
+    points: "Points",
+  };
+  return (
+    <ul className="grid grid-cols-5">
+      {MOBILE_SECTIONS.map((id) => (
+        <li key={id}>
+          <Link
+            to="/subs/$spaceId/$section"
+            params={{ spaceId: profile.spaceId, section: id }}
+            aria-current={profile.section === id ? "page" : undefined}
+            className={`flex flex-col items-center gap-1 py-3 text-[0.65rem] ${profile.section === id ? "text-gold" : "text-muted-foreground"}`}
+          >
+            {id === "overview" ? (
+              <Sun className="h-5 w-5" />
+            ) : id === "routines" ? (
+              <CalendarClock className="h-5 w-5" />
+            ) : id === "submissions" ? (
+              <ClipboardCheck className="h-5 w-5" />
+            ) : (
+              <Award className="h-5 w-5" />
+            )}
+            {short[id]}
+          </Link>
+        </li>
+      ))}
+      <li>
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button
+              variant="ghost"
+              className="flex h-auto w-full flex-col gap-1 rounded-none py-3 text-[0.65rem] text-muted-foreground"
+            >
+              <MoreHorizontal className="h-5 w-5" />
+              More
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="bottom">
+            <SheetHeader>
+              <SheetTitle>{profile.subName}</SheetTitle>
+            </SheetHeader>
+            <nav className="mt-5 grid grid-cols-2 gap-2" aria-label="More sections">
+              {SECTIONS.filter(
+                (section) => !(MOBILE_SECTIONS as readonly string[]).includes(section.id),
+              ).map((section) => (
+                <SheetClose asChild key={section.id}>
+                  <Link
+                    to="/subs/$spaceId/$section"
+                    params={{ spaceId: profile.spaceId, section: section.id }}
+                    className="rounded-md border px-4 py-3 text-sm"
+                  >
+                    {section.label}
+                  </Link>
+                </SheetClose>
+              ))}
+              <SheetClose asChild>
+                <Link to="/dashboard" className="rounded-md border px-4 py-3 text-sm">
+                  All Subs
+                </Link>
+              </SheetClose>
+            </nav>
+          </SheetContent>
+        </Sheet>
+      </li>
+    </ul>
   );
 }

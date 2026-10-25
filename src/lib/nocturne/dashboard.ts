@@ -12,7 +12,7 @@ export type DashboardCard = {
   paired: boolean;
   paused: boolean;
   pauseSignal: "RED" | "YELLOW" | null;
-  today: { completed: number; pending: number; total: number };
+  today: { completed: number; pending: number; notPerformed: number; total: number };
   pendingReview: number;
   latestCheckIn: { title: string; at: string } | null;
   rewards: number;
@@ -23,7 +23,7 @@ export type DashboardCard = {
   invite: { token: string; expiresAt: number } | null;
 };
 
-const NOT_PENDING = new Set(["completed", "excused", "skipped"]);
+const NOT_PENDING = new Set(["completed", "excused", "skipped", "not_performed"]);
 
 export function summarizeSpace(
   spaceId: string,
@@ -53,6 +53,7 @@ export function summarizeSpace(
     today: {
       completed: statuses.filter((status) => status === "completed").length,
       pending: statuses.filter((status) => !NOT_PENDING.has(status)).length,
+      notPerformed: statuses.filter((status) => status === "not_performed").length,
       total: statuses.length,
     },
     pendingReview: submissions.filter((item) => item.status === "open").length,
