@@ -16,7 +16,8 @@ export class RoutineDraftError extends Error {
 
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const draftSchema = savedStateSchema.shape.routines.element
-  // Verification and rewards are the Master's decision, never part of an AI draft.
+  // Rewards stay the Master's decision and are never part of an AI draft. Telegram verification
+  // is also not chosen by the AI, but defaults on below.
   .omit({ id: true, revision: true, telegramVerify: true, rewardPoints: true })
   .extend({
     title: z.string().trim().min(1).max(60),
@@ -216,7 +217,13 @@ export async function draftRoutine(
         const texts = content.filter((item) => item.type === "output_text");
         if (texts.length !== 1 || !texts[0]?.text) throw new Error("Missing structured output");
         const { dueTime, ...draft } = draftSchema.parse(JSON.parse(texts[0].text));
-        return { ...draft, ...(dueTime === null ? {} : { dueTime }), id: randomUUID() };
+        // Telegram two-person verification is on by default; the Master reviews and can turn it off.
+        return {
+          ...draft,
+          ...(dueTime === null ? {} : { dueTime }),
+          telegramVerify: true,
+          id: randomUUID(),
+        };
       })(),
     ]);
   } catch (error) {

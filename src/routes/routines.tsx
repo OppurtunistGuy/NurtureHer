@@ -50,6 +50,9 @@ const blank = (): Routine => ({
   requiresAck: false,
   optInDaily: false,
   proof: "text",
+  // Telegram two-person verification is on by default; the Master can turn it off per routine
+  // (for example during an emergency or a day off).
+  telegramVerify: true,
 });
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
 

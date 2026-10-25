@@ -97,6 +97,26 @@ export const accountActions = {
     set({ status: "signedOut", account: null, legacySpaces: 0 });
     return { ok: true };
   },
+  async forgot(email: string): Promise<Result & { message?: string }> {
+    try {
+      const { response, data } = await post({ op: "auth.forgot", email });
+      if (!response.ok)
+        return { ok: false, error: data.error ?? "Could not send the reset email." };
+      return { ok: true, message: data.message };
+    } catch {
+      return { ok: false, error: "Cannot reach BoundSome. Check your connection and retry." };
+    }
+  },
+  async reset(token: string, password: string): Promise<Result> {
+    try {
+      const { response, data } = await post({ op: "auth.reset", token, password });
+      if (!response.ok) return { ok: false, error: data.error ?? "Could not reset your password." };
+      set({ status: "signedOut", account: null, legacySpaces: 0 });
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Cannot reach BoundSome. Check your connection and retry." };
+    }
+  },
   async rename(name: string): Promise<Result> {
     const { response, data } = await post({ op: "auth.rename", name });
     if (!response.ok) return { ok: false, error: data.error ?? "Could not save your name." };

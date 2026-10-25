@@ -7,7 +7,8 @@ import { createClient } from "@libsql/client";
 import { handleSpaceRequest } from "./space-api.server";
 import { SpaceRepository } from "./space-repository.server";
 import { RemoteSpaceRepository, type SpaceStorage } from "./remote-storage.server";
-import { IP_FAILURE_LIMIT } from "./auth-core.server";
+import { IP_FAILURE_LIMIT, RESET_PER_EMAIL, RESET_PER_IP } from "./auth-core.server";
+import { setMailer, type Mail } from "./mailer.server";
 
 const PASSWORD = "correct horse battery";
 let directory: string, clock: Date, db: SpaceStorage & { close(): void };
@@ -168,6 +169,131 @@ for (const backend of ["local SQLite", "remote libSQL"] as const) {
       expect((await browser.login("slow@example.test")).status).toBe(429);
       clock = new Date(clock.valueOf() + 2_000);
       expect((await browser.login("slow@example.test")).status).toBe(200);
+    });
+
+    describe("password reset", () => {
+      let outbox: Mail[];
+      const tokenIn = (mail: Mail | undefined) =>
+        /#reset=([a-f0-9]{64})/.exec(mail?.text ?? "")?.[1];
+      beforeEach(() => {
+        outbox = [];
+        process.env["RESEND_API_KEY"] = "re_test_key_for_unit_tests";
+        setMailer(async (mail) => (outbox.push(mail), true));
+      });
+      afterEach(() => {
+        setMailer();
+        delete process.env["RESEND_API_KEY"];
+      });
+      const forgot = (browser: Browser, email: string) =>
+        browser.call({ op: "auth.forgot", email });
+      const reset = (browser: Browser, token: string, password = "a brand new password") =>
+        browser.call({ op: "auth.reset", token, password });
+
+      it("answers the same for known and unknown emails, and only emails real accounts", async () => {
+        await new Browser().register("real@example.test");
+        const a = await forgot(new Browser("192.0.2.10"), "real@example.test");
+        const b = await forgot(new Browser("192.0.2.11"), "nobody@example.test");
+        expect(a.status).toBe(200);
+        expect(b.status).toBe(200);
+        expect(a.body).toEqual(b.body);
+        expect(outbox).toHaveLength(1);
+        expect(outbox[0]!.to).toBe("real@example.test");
+        expect(tokenIn(outbox[0])).toBeTruthy();
+      });
+
+      it("sets a new password once, ends every sign-in, and the link stops working", async () => {
+        const phone = new Browser("192.0.2.20");
+        await phone.register("reset@example.test");
+        await phone.create();
+        const laptop = new Browser("192.0.2.21");
+        expect((await laptop.login("reset@example.test")).status).toBe(200);
+        await forgot(new Browser("192.0.2.22"), "reset@example.test");
+        const token = tokenIn(outbox[0])!;
+        const done = await reset(new Browser("192.0.2.23"), token);
+        expect(done.status).toBe(200);
+        expect((await phone.spaces()).status).toBe(401);
+        expect((await laptop.spaces()).status).toBe(401);
+        expect((await new Browser("192.0.2.24").login("reset@example.test")).status).toBe(401);
+        const again = new Browser("192.0.2.25");
+        expect((await again.login("reset@example.test", "a brand new password")).status).toBe(200);
+        expect((await again.spaces()).status).toBe(200);
+        expect((await reset(new Browser("192.0.2.26"), token, "another password!!")).status).toBe(
+          400,
+        );
+        expect(
+          (await new Browser("192.0.2.27").login("reset@example.test", "another password!!"))
+            .status,
+        ).toBe(401);
+      });
+
+      it("emails the owner a notice after a reset and after a password change", async () => {
+        const browser = new Browser("192.0.2.30");
+        await browser.register("notice@example.test", "Nia");
+        const changed = await browser.call({
+          op: "auth.password",
+          current: PASSWORD,
+          next: "changed password here",
+        });
+        expect(changed.status).toBe(200);
+        expect(outbox).toHaveLength(1);
+        expect(outbox[0]!.to).toBe("notice@example.test");
+        expect(outbox[0]!.subject).toBe("Your BoundSome password was changed");
+        expect(outbox[0]!.text).toContain("changed from your account page");
+
+        await forgot(new Browser("192.0.2.31"), "notice@example.test");
+        const token = tokenIn(outbox[1])!;
+        expect((await reset(new Browser("192.0.2.32"), token)).status).toBe(200);
+        expect(outbox).toHaveLength(3);
+        expect(outbox[2]!.subject).toBe("Your BoundSome password was changed");
+        expect(outbox[2]!.text).toContain("reset with an emailed link");
+        // The notice never carries a usable link.
+        expect(tokenIn(outbox[2])).toBeUndefined();
+      });
+
+      it("rejects expired, unknown and malformed links", async () => {
+        await new Browser().register("late@example.test");
+        await forgot(new Browser("192.0.2.30"), "late@example.test");
+        const token = tokenIn(outbox[0])!;
+        clock = new Date(clock.valueOf() + 31 * 60 * 1000);
+        expect((await reset(new Browser("192.0.2.31"), token)).status).toBe(400);
+        expect((await reset(new Browser("192.0.2.31"), "f".repeat(64))).status).toBe(400);
+        expect((await reset(new Browser("192.0.2.31"), "short")).status).toBe(400);
+        expect((await new Browser("192.0.2.32").login("late@example.test")).status).toBe(200);
+      });
+
+      it("keeps only the newest link, and a short new password is refused", async () => {
+        await new Browser().register("two@example.test");
+        await forgot(new Browser("192.0.2.40"), "two@example.test");
+        await forgot(new Browser("192.0.2.41"), "two@example.test");
+        const [first, second] = outbox.map(tokenIn);
+        expect((await reset(new Browser("192.0.2.42"), first!)).status).toBe(400);
+        expect((await reset(new Browser("192.0.2.42"), second!, "short")).status).toBe(400);
+        expect((await reset(new Browser("192.0.2.42"), second!)).status).toBe(200);
+      });
+
+      it("limits requests per email silently and per IP openly", async () => {
+        await new Browser().register("busy@example.test");
+        for (let i = 0; i < RESET_PER_EMAIL + 2; i++)
+          expect((await forgot(new Browser(`192.0.2.${50 + i}`), "busy@example.test")).status).toBe(
+            200,
+          );
+        expect(outbox).toHaveLength(RESET_PER_EMAIL);
+        const spray = new Browser("192.0.2.99");
+        for (let i = 0; i < RESET_PER_IP; i++)
+          expect((await forgot(spray, `n${i}@example.test`)).status).toBe(200);
+        expect((await forgot(spray, "n-last@example.test")).status).toBe(429);
+      });
+
+      it("removes the link when the email could not be sent, and says so when email is off", async () => {
+        await new Browser().register("fail@example.test");
+        setMailer(async () => false);
+        await forgot(new Browser("192.0.2.60"), "fail@example.test");
+        setMailer(async (mail) => (outbox.push(mail), true));
+        await forgot(new Browser("192.0.2.61"), "fail@example.test");
+        expect(outbox).toHaveLength(1);
+        delete process.env["RESEND_API_KEY"];
+        expect((await forgot(new Browser("192.0.2.62"), "fail@example.test")).status).toBe(503);
+      });
     });
 
     it("claims old browser spaces only after a successful login", async () => {

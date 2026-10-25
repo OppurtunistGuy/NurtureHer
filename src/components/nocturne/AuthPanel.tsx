@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -6,7 +6,25 @@ import { accountActions } from "@/lib/nocturne/account";
 
 /** Log in or create an account. Shown whenever a shared action needs a signed-in person. */
 export function AuthPanel({ intro }: { intro?: string | undefined }) {
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "forgot" | "reset">("login");
+  const [resetToken, setResetToken] = useState(""),
+    [notice, setNotice] = useState("");
+  // The emailed link carries its one-time token after the #, so it never reaches a server log.
+  // Also listens for hash changes, so a link opened in a tab already on this page still works.
+  useEffect(() => {
+    const read = () => {
+      const token = new URLSearchParams(window.location.hash.slice(1)).get("reset") ?? "";
+      if (/^[a-f0-9]{64}$/.test(token)) {
+        setResetToken(token);
+        setMode("reset");
+        setError("");
+        setNotice("");
+      }
+    };
+    read();
+    window.addEventListener("hashchange", read);
+    return () => window.removeEventListener("hashchange", read);
+  }, []);
   const [name, setName] = useState(""),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
@@ -14,13 +32,38 @@ export function AuthPanel({ intro }: { intro?: string | undefined }) {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const registering = mode === "register";
-  const ready = registering
-    ? name.trim() && email.trim() && password.length >= 10 && adult
-    : email.trim() && password;
+  const forgetting = mode === "forgot",
+    resetting = mode === "reset";
+  const ready = resetting
+    ? password.length >= 10
+    : forgetting
+      ? email.trim()
+      : registering
+        ? name.trim() && email.trim() && password.length >= 10 && adult
+        : email.trim() && password;
 
   async function submit() {
     setError("");
+    setNotice("");
     setBusy(true);
+    if (forgetting) {
+      const sent = await accountActions.forgot(email.trim());
+      setBusy(false);
+      if (!sent.ok) setError(sent.error);
+      else setNotice(sent.message ?? "If that email has an account, a reset link is on its way.");
+      return;
+    }
+    if (resetting) {
+      const done = await accountActions.reset(resetToken, password);
+      setBusy(false);
+      if (!done.ok) return setError(done.error);
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      setResetToken("");
+      setPassword("");
+      setMode("login");
+      setNotice("Password changed. Log in with your new password.");
+      return;
+    }
     const result = registering
       ? await accountActions.register(name.trim(), email.trim(), password)
       : await accountActions.login(email.trim(), password);
@@ -37,6 +80,7 @@ export function AuthPanel({ intro }: { intro?: string | undefined }) {
           onClick={() => {
             setMode("login");
             setError("");
+            setNotice("");
           }}
         >
           Log in
@@ -46,6 +90,7 @@ export function AuthPanel({ intro }: { intro?: string | undefined }) {
           onClick={() => {
             setMode("register");
             setError("");
+            setNotice("");
           }}
         >
           Create account
@@ -59,9 +104,25 @@ export function AuthPanel({ intro }: { intro?: string | undefined }) {
         }}
       >
         <h2 id="auth-heading" className="text-2xl">
-          {registering ? "Create your account" : "Welcome back"}
+          {resetting
+            ? "Choose a new password"
+            : forgetting
+              ? "Reset your password"
+              : registering
+                ? "Create your account"
+                : "Welcome back"}
         </h2>
-        {intro && <p className="text-sm text-gold">{intro}</p>}
+        {forgetting && (
+          <p className="text-sm text-muted-foreground">
+            Enter your email and we'll send a link that works for 30 minutes.
+          </p>
+        )}
+        {notice && (
+          <p role="status" className="text-sm text-gold">
+            {notice}
+          </p>
+        )}
+        {intro && !resetting && !forgetting && <p className="text-sm text-gold">{intro}</p>}
         {registering && (
           <div className="space-y-2">
             <Label htmlFor="account-name">Your name</Label>
@@ -75,31 +136,50 @@ export function AuthPanel({ intro }: { intro?: string | undefined }) {
             />
           </div>
         )}
-        <div className="space-y-2">
-          <Label htmlFor="account-email">Email</Label>
-          <Input
-            id="account-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            maxLength={254}
-            autoComplete="email"
-            required
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="account-password">Password</Label>
-          <Input
-            id="account-password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            maxLength={200}
-            autoComplete={registering ? "new-password" : "current-password"}
-            required
-          />
-          {registering && <p className="text-xs text-muted-foreground">At least 10 characters.</p>}
-        </div>
+        {!resetting && (
+          <div className="space-y-2">
+            <Label htmlFor="account-email">Email</Label>
+            <Input
+              id="account-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              maxLength={254}
+              autoComplete="email"
+              required
+            />
+          </div>
+        )}
+        {!forgetting && (
+          <div className="space-y-2">
+            <Label htmlFor="account-password">{resetting ? "New password" : "Password"}</Label>
+            <Input
+              id="account-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              maxLength={200}
+              autoComplete={registering || resetting ? "new-password" : "current-password"}
+              required
+            />
+            {(registering || resetting) && (
+              <p className="text-xs text-muted-foreground">At least 10 characters.</p>
+            )}
+            {mode === "login" && (
+              <button
+                type="button"
+                className="text-xs text-gold underline underline-offset-2"
+                onClick={() => {
+                  setMode("forgot");
+                  setError("");
+                  setNotice("");
+                }}
+              >
+                Forgot your password?
+              </button>
+            )}
+          </div>
+        )}
         {registering && (
           <label className="flex items-start gap-3 text-sm text-muted-foreground">
             <input
@@ -117,13 +197,22 @@ export function AuthPanel({ intro }: { intro?: string | undefined }) {
           </p>
         )}
         <Button size="lg" className="w-full" disabled={!ready || busy} type="submit">
-          {busy ? "Please wait…" : registering ? "Create account" : "Log in"}
+          {busy
+            ? "Please wait…"
+            : resetting
+              ? "Save new password"
+              : forgetting
+                ? "Send reset link"
+                : registering
+                  ? "Create account"
+                  : "Log in"}
         </Button>
         <p className="text-xs leading-5 text-muted-foreground">
-          {registering
-            ? "Spaces you already opened on this browser move into your new account."
-            : "Signing in on this browser also moves any spaces you opened here before accounts existed."}{" "}
-          Password reset by email isn't available yet, so keep your password safe.
+          {resetting || forgetting
+            ? "For your safety, resetting signs you out on every device."
+            : registering
+              ? "Spaces you already opened on this browser move into your new account."
+              : "Signing in on this browser also moves any spaces you opened here before accounts existed."}
         </p>
       </form>
     </section>
