@@ -92,7 +92,9 @@ function Wheel({ slice }: { slice: number | null }) {
         {WHEEL_SLICES.map((name, i) => {
           const [x1, y1] = polar(i * 45, 94),
             [x2, y2] = polar((i + 1) * 45, 94),
-            [tx, ty] = polar((i + 0.5) * 45, 62);
+            [tx, ty] = polar((i + 0.5) * 45, 64),
+            mid = (i + 0.5) * 45,
+            upright = mid > 90 && mid < 270 ? mid + 180 : mid;
           return (
             <g key={name}>
               <path
@@ -105,10 +107,10 @@ function Wheel({ slice }: { slice: number | null }) {
                 x={tx}
                 y={ty}
                 fill="#f0e6d6"
-                fontSize="9"
+                fontSize="8"
                 textAnchor="middle"
                 dominantBaseline="middle"
-                transform={`rotate(${(i + 0.5) * 45} ${tx} ${ty})`}
+                transform={`rotate(${upright - 90} ${tx} ${ty})`}
               >
                 {SLICE_LABEL(name)}
               </text>

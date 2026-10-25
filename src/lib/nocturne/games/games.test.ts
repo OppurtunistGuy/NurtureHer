@@ -210,8 +210,8 @@ describe("dice roll", () => {
     return () => values[Math.min(i++, values.length - 1)]!;
   };
   it("die 1 picks the category and die 2 sets the minutes on a task", () => {
-    // 0.34 -> die 3 (affection); 0.7 -> die 5 minutes; then the draw picks index 0
-    const r = rollDice(active(), "dom", STARTER_DECK, ctx(), seq(0.34, 0.7, 0));
+    // 0.34 -> die 3 (affection); 0.7 -> die 5 minutes; then the draw picks the massage card (its title names no minutes)
+    const r = rollDice(active(), "dom", STARTER_DECK, ctx(), seq(0.34, 0.7, 0.9));
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.value.lastRoll).toEqual({ die1: 3, die2: 5 });
@@ -258,5 +258,29 @@ describe("dice roll", () => {
     const first = rollDice(active(), "dom", STARTER_DECK, ctx(), () => 0);
     if (!first.ok) throw new Error(first.error);
     expect(rollDice(first.value, "dom", STARTER_DECK, ctx(), () => 0)).toMatchObject({ ok: false });
+  });
+});
+
+describe("dice timer vs card text", () => {
+  it("keeps a card's own minutes when its title already says them", async () => {
+    const { rollDice } = await import("./dice");
+    const { createSession, join } = await import("./session");
+    const { STARTER_DECK } = await import("./starter-deck");
+    let s = createSession("t", "dice", "hot");
+    for (const r of ["dom", "sub"] as const) {
+      const j = join(s, r);
+      if (j.ok) s = j.value;
+    }
+    const deck = STARTER_DECK.filter((c) => c.id === "obd-sweet");
+    // die 1 = 2 (obedience), die 2 = 6
+    const seq = [0.2, 0.99, 0];
+    const r = rollDice(
+      s,
+      "dom",
+      deck,
+      { hardLimits: [], hidden: [], notForMe: [] },
+      () => seq.shift() ?? 0,
+    );
+    expect(r.ok && r.value.currentCard?.timerMinutes).toBe(10);
   });
 });

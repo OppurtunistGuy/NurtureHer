@@ -48,7 +48,11 @@ export function rollDice(
       rng,
     ) ?? drawCard(deck, dealCtx, session.seen, rng);
   if (!draw) return { ok: false, error: "No card is available at this heat level." };
-  const card = draw.card.kind === "task" ? { ...draw.card, timerMinutes: die2 } : draw.card;
+  // Die 2 sets the minutes, unless the card already says how long in its own words
+  // ("... for 10 minutes"), so the title and the timer never disagree.
+  const sayMinutes = /\bminutes?\b/i.test(draw.card.title);
+  const card =
+    draw.card.kind === "task" && !sayMinutes ? { ...draw.card, timerMinutes: die2 } : draw.card;
   return {
     ok: true,
     value: { ...session, lastRoll: { die1, die2 }, currentCard: card, seen: draw.seen },
