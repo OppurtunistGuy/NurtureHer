@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AccountRouteImport } from './routes/account'
 import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as AgreementsRouteImport } from './routes/agreements'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DiscussionRouteImport } from './routes/discussion'
 import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as NotesRouteImport } from './routes/notes'
@@ -43,6 +44,11 @@ const ActivityRoute = ActivityRouteImport.update({
 const AgreementsRoute = AgreementsRouteImport.update({
   id: '/agreements',
   path: '/agreements',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DiscussionRoute = DiscussionRouteImport.update({
@@ -106,6 +112,7 @@ export interface FileRoutesByFullPath {
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
   '/agreements': typeof AgreementsRoute
+  '/dashboard': typeof DashboardRoute
   '/discussion': typeof DiscussionRoute
   '/goals': typeof GoalsRoute
   '/notes': typeof NotesRoute
@@ -123,6 +130,7 @@ export interface FileRoutesByTo {
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
   '/agreements': typeof AgreementsRoute
+  '/dashboard': typeof DashboardRoute
   '/discussion': typeof DiscussionRoute
   '/goals': typeof GoalsRoute
   '/notes': typeof NotesRoute
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/account': typeof AccountRoute
   '/activity': typeof ActivityRoute
   '/agreements': typeof AgreementsRoute
+  '/dashboard': typeof DashboardRoute
   '/discussion': typeof DiscussionRoute
   '/goals': typeof GoalsRoute
   '/notes': typeof NotesRoute
@@ -160,6 +169,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/activity'
     | '/agreements'
+    | '/dashboard'
     | '/discussion'
     | '/goals'
     | '/notes'
@@ -177,6 +187,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/activity'
     | '/agreements'
+    | '/dashboard'
     | '/discussion'
     | '/goals'
     | '/notes'
@@ -194,6 +205,7 @@ export interface FileRouteTypes {
     | '/account'
     | '/activity'
     | '/agreements'
+    | '/dashboard'
     | '/discussion'
     | '/goals'
     | '/notes'
@@ -212,6 +224,7 @@ export interface RootRouteChildren {
   AccountRoute: typeof AccountRoute
   ActivityRoute: typeof ActivityRoute
   AgreementsRoute: typeof AgreementsRoute
+  DashboardRoute: typeof DashboardRoute
   DiscussionRoute: typeof DiscussionRoute
   GoalsRoute: typeof GoalsRoute
   NotesRoute: typeof NotesRoute
@@ -252,6 +265,13 @@ declare module '@tanstack/react-router' {
       path: '/agreements'
       fullPath: '/agreements'
       preLoaderRoute: typeof AgreementsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/discussion': {
@@ -351,6 +371,7 @@ const rootRouteChildren: RootRouteChildren = {
   AccountRoute: AccountRoute,
   ActivityRoute: ActivityRoute,
   AgreementsRoute: AgreementsRoute,
+  DashboardRoute: DashboardRoute,
   DiscussionRoute: DiscussionRoute,
   GoalsRoute: GoalsRoute,
   NotesRoute: NotesRoute,

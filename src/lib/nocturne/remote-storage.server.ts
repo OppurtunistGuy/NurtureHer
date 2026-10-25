@@ -30,7 +30,17 @@ const schema = [
 ];
 
 export type SpaceStorage = {
-  [K in "create" | "join" | "preview" | "read" | "change" | "openTelegram" | "telegramUpdate"]: (
+  [
+    K in
+      | "create"
+      | "join"
+      | "preview"
+      | "read"
+      | "dashboard"
+      | "change"
+      | "openTelegram"
+      | "telegramUpdate"
+  ]: (
     ...args: Parameters<SpaceRepository[K]>
   ) => ReturnType<SpaceRepository[K]> | Promise<ReturnType<SpaceRepository[K]>>;
 } & {
@@ -102,6 +112,9 @@ export class RemoteSpaceRepository implements SpaceStorage {
   }
   preview(...args: Parameters<SpaceRepository["preview"]>) {
     return this.invoke("preview", args);
+  }
+  dashboard(...args: Parameters<SpaceRepository["dashboard"]>) {
+    return this.invoke("dashboard", args);
   }
   read(...args: Parameters<SpaceRepository["read"]>) {
     return this.invoke("read", args);

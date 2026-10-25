@@ -11,6 +11,7 @@ import { RemoteTelegramProofStore } from "./remote-telegram.server";
 import { telegramConfigured } from "./telegram-proof.server";
 import type { RemoteSql } from "./remote-storage.server";
 import { ACCOUNT_MEMBERSHIP_EXPIRES, isPrincipal } from "./auth-core.server";
+import { summarizeSpace } from "./dashboard";
 type Row = {
   id: string;
   body: string;
@@ -203,6 +204,24 @@ export class RemoteRepositoryCore {
       const token = await this.addMember(row.id, role, session);
       return { token, snapshot: await this.snapshot(await this.row(row.id), role, token) };
     });
+  }
+  /** One card per relationship this identity belongs to, and nothing else. */
+  async dashboard(session: string) {
+    const now = this.now();
+    return await Promise.all(
+      (await this.memberships(session)).map(async (member) => {
+        const row = await this.row(member.space_id);
+        const mine =
+          member.role === row.creator_role && row.invite && row.invite_expires > now.valueOf();
+        return summarizeSpace(
+          row.id,
+          this.state(row),
+          member.role,
+          now,
+          mine ? { token: row.invite!, expiresAt: row.invite_expires } : null,
+        );
+      }),
+    );
   }
   async read(session: string, spaceId?: string) {
     const member = await this.member(session, spaceId);

@@ -85,6 +85,9 @@ try {
     "Signed-out visitors must not be offered shared creation",
   );
   await signUp(owner, "Demo Maya", "maya@e2e.test");
+  // A new account with no relationships lands on an empty dashboard.
+  await owner.getByRole("heading", { name: "No Subs yet", exact: true }).waitFor();
+  await owner.goto(`${origin}/#setup`);
   await owner.getByLabel("Your name", { exact: true }).fill("Demo Maya");
   await owner.getByRole("checkbox").check();
   await owner.getByRole("button", { name: "Create my space", exact: true }).click();
@@ -249,6 +252,8 @@ try {
   });
   await failurePage.goto(origin);
   await signUp(failurePage, "Demo Retry", "retry@e2e.test");
+  await failurePage.getByRole("heading", { name: "No Subs yet", exact: true }).waitFor();
+  await failurePage.goto(`${origin}/#setup`);
   await failurePage.getByLabel("Your name", { exact: true }).fill("Demo Retry");
   await failurePage.getByRole("checkbox").check();
   await failurePage.getByRole("button", { name: "Create my space", exact: true }).click();
@@ -357,7 +362,7 @@ try {
     "PASS browser: authenticated test Telegram updates synchronize a receipt after both confirmations",
   );
   const firstId = await owner.getByLabel("Active space", { exact: true }).inputValue();
-  await owner.getByRole("link", { name: "Add a space", exact: true }).click();
+  await owner.goto(`${origin}/#setup`);
   await owner.getByLabel("Your name", { exact: true }).fill("Demo Maya Second");
   await owner.getByRole("checkbox").check();
   await owner.getByRole("button", { name: "Create my space", exact: true }).click();
@@ -440,6 +445,29 @@ try {
   console.log(
     "PASS browser: a Sub can join multiple Masters and preserve the original relationship",
   );
+  // The Master's dashboard shows both Subs, with the paused one found by its filter.
+  await owner.goto(`${origin}/dashboard`);
+  await owner.getByRole("heading", { name: "All Subs", exact: true }).waitFor();
+  await owner.getByRole("button", { name: "Open Demo Aria Updated", exact: true }).waitFor();
+  await owner.getByRole("button", { name: "Open Demo Second Sub", exact: true }).waitFor();
+  await owner.getByRole("button", { name: "Paused", exact: true }).click();
+  await owner.getByRole("button", { name: "Open Demo Aria Updated", exact: true }).waitFor();
+  assert.equal(
+    await owner.getByRole("button", { name: "Open Demo Second Sub", exact: true }).count(),
+    0,
+    "Paused filter must hide the unpaused relationship",
+  );
+  await owner.getByRole("button", { name: "All", exact: true }).click();
+  await owner.getByLabel("Search by name", { exact: true }).fill("second");
+  assert.equal(
+    await owner.getByRole("button", { name: "Open Demo Aria Updated", exact: true }).count(),
+    0,
+  );
+  // A Sub's dashboard lists only their own Masters, never the Master's other Subs.
+  await secondPartner.goto(`${origin}/dashboard`);
+  await secondPartner.getByRole("heading", { name: "My Masters", exact: true }).waitFor();
+  assert.equal(await secondPartner.getByText("Demo Aria", { exact: false }).count(), 0);
+  console.log("PASS browser: dashboard cards, filters, search and Sub-side isolation");
   // Sign out ends the session; signing back in on a new device restores every relationship.
   await guest.goto(`${origin}/today`);
   await guest.getByRole("button", { name: "Account menu for Demo Aria", exact: true }).click();

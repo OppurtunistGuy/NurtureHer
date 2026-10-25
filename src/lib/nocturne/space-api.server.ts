@@ -172,7 +172,8 @@ export async function handleSpaceRequest(
       throw new SpaceError(403, "Open this page on the same site before making changes.");
     const url = new URL(request.url);
     const wantsAccount = request.method === "GET" && url.searchParams.has("account");
-    if (request.method === "GET" && !wantsAccount && !legacy && !authToken)
+    const wantsDashboard = request.method === "GET" && url.searchParams.has("dashboard");
+    if (request.method === "GET" && !wantsAccount && !wantsDashboard && !legacy && !authToken)
       throw new SpaceError(
         401,
         "No active space on this browser. Open an invitation or create a space.",
@@ -190,6 +191,10 @@ export async function handleSpaceRequest(
         account: account ?? null,
         legacySpaces: !account && legacy ? await db.auth((core) => core.legacyCount(legacy)) : 0,
       });
+    if (request.method === "GET" && url.searchParams.has("dashboard")) {
+      if (!account) throw new SpaceError(401, "Log in to open your dashboard.");
+      return json({ cards: await db.dashboard(session) });
+    }
     if (request.method === "GET") {
       if (!session)
         throw new SpaceError(401, "Your session ended. Log in again to open your spaces.");

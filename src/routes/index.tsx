@@ -1,5 +1,5 @@
 import { createFileRoute, useLocation, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -53,10 +53,26 @@ function Onboarding() {
       setMode("join");
     }
   }, [fromLink]);
+  // Set once this page has finished its job, so redirects never race the navigation away.
+  const leaving = useRef(false);
   useEffect(() => {
-    if (s.onboarded && !fromLink && location.hash !== "setup" && mode !== "join")
+    // The page can still be mounted for a moment after navigating away; never redirect then.
+    if (leaving.current || location.pathname !== "/") return;
+    if (fromLink || location.hash === "setup" || mode === "join" || mode === "demo") return;
+    // Signed-in people start on their dashboard; the solo demo keeps its own Today page.
+    if (me.status === "signedIn") void navigate({ to: "/dashboard", replace: true });
+    else if (s.onboarded && s.space.mode !== "shared")
       void navigate({ to: "/today", replace: true });
-  }, [s.onboarded, fromLink, location.hash, mode, navigate]);
+  }, [
+    s.onboarded,
+    s.space.mode,
+    me.status,
+    fromLink,
+    location.hash,
+    location.pathname,
+    mode,
+    navigate,
+  ]);
   useEffect(() => {
     if (mode !== "join" || !token) return;
     let active = true;
@@ -83,8 +99,10 @@ function Onboarding() {
     setError("");
     if (!adult || !name.trim()) return;
     if (mode === "demo") {
-      if (actions.onboard(role, name.trim(), role === "dom" ? "Sub" : "Master").ok)
+      if (actions.onboard(role, name.trim(), role === "dom" ? "Sub" : "Master").ok) {
+        leaving.current = true;
         await navigate({ to: "/today" });
+      }
       return;
     }
     if (mode === "join" && !token) {
@@ -96,6 +114,7 @@ function Onboarding() {
         ? await spaceActions.join(name.trim(), token)
         : await spaceActions.create(name.trim(), role);
     if (result.ok) {
+      leaving.current = true;
       if (fromLink) window.history.replaceState(window.history.state, "", "/");
       await navigate({ to: "/today", replace: true });
     } else setError(result.error);

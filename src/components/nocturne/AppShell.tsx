@@ -64,7 +64,7 @@ export function AccountMenu() {
         <DropdownMenuItem onSelect={() => void navigate({ to: "/account" })}>
           My account
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => void navigate({ to: "/today" })}>
+        <DropdownMenuItem onSelect={() => void navigate({ to: "/dashboard" })}>
           Dashboard
         </DropdownMenuItem>
         <DropdownMenuSeparator />
@@ -177,15 +177,21 @@ export function AppShell({
             >
               {connection.spaces.map((space) => (
                 <option key={space.id} value={space.id}>
-                  {space.partnerName} · {space.role === "dom" ? "Master" : "Sub"}
+                  {space.partnerName} · {space.role === "dom" ? "your Sub" : "your Master"}
                   {!space.paired ? " · awaiting partner" : ""}
                   {space.paused ? " · paused" : ""}
                 </option>
               ))}
             </select>
-            <Link to="/" hash="setup" className="shrink-0 text-xs text-gold underline">
-              Add a space
-            </Link>
+            {me.status === "signedIn" ? (
+              <Link to="/dashboard" className="shrink-0 text-xs text-gold underline">
+                All Subs
+              </Link>
+            ) : (
+              <Link to="/" hash="setup" className="shrink-0 text-xs text-gold underline">
+                Add a space
+              </Link>
+            )}
           </div>
         )}
         <nav

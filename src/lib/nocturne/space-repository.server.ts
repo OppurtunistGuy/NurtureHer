@@ -6,6 +6,7 @@ import {
   asyncSql,
   isPrincipal,
 } from "./auth-core.server";
+import { summarizeSpace } from "./dashboard";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -382,6 +383,22 @@ export class SpaceRepository {
       this.db.prepare("UPDATE spaces SET invite=NULL WHERE id=?").run(row.id);
       const token = this.addMember(row.id, role, session);
       return { token, snapshot: this.snapshot(this.row(row.id), role, token) };
+    });
+  }
+  /** One card per relationship this identity belongs to, and nothing else. */
+  dashboard(session: string) {
+    const now = this.now();
+    return this.memberships(session).map((member) => {
+      const row = this.row(member.space_id);
+      const mine =
+        member.role === row.creator_role && row.invite && row.invite_expires > now.valueOf();
+      return summarizeSpace(
+        row.id,
+        this.state(row),
+        member.role,
+        now,
+        mine ? { token: row.invite!, expiresAt: row.invite_expires } : null,
+      );
     });
   }
   read(session: string, spaceId?: string) {
