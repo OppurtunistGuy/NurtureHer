@@ -10,6 +10,8 @@ import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 import { agreementReady } from "@/lib/nocturne/engine";
 import { uid } from "@/lib/nocturne/logic";
 import { pointsSummary, pointsLevelsSchema, type PointsLevel } from "@/lib/nocturne/points";
+import { useUnsavedChanges } from "@/lib/nocturne/unsaved";
+import { useProfile, useSubName } from "@/lib/nocturne/profile";
 
 export const Route = createFileRoute("/points")({
   head: () => ({ meta: [{ title: "Points & milestones — BoundSome" }] }),
@@ -29,6 +31,14 @@ function PointsPage() {
     null,
   );
   const [note, setNote] = useState("");
+  const profile = useProfile(),
+    subName = useSubName();
+  useUnsavedChanges(!!reason.trim(), "a points entry");
+  useUnsavedChanges(!!note.trim(), "a points correction");
+  // In a Sub's profile, levels and milestones have their own section.
+  const levelsOnly = profile?.section === "levels",
+    showLevels = !profile || levelsOnly,
+    showLedger = !levelsOnly;
   const allowed = master && agreementReady(s) && !s.pause.active && !busy;
   const accepted = (s.submissions ?? []).filter(
     (item) =>
@@ -73,7 +83,10 @@ function PointsPage() {
     }
   }
   return (
-    <AppShell eyebrow="Recognise effort. Review fairly." title="Points & milestones">
+    <AppShell
+      eyebrow="Recognise effort. Review fairly."
+      title={levelsOnly ? "Levels and milestones" : profile ? "Points" : "Points & milestones"}
+    >
       <p className="mb-6 text-sm leading-6 text-muted-foreground">
         Each space has its own points history. Rewards build progress; punishment points record a
         reviewed accountability concern. Neither triggers a physical consequence, restriction, or
@@ -113,7 +126,7 @@ function PointsPage() {
           Progress uses reward points only. Resolving accountability does not spend your rewards.
         </p>
       </section>
-      <section aria-label="Milestones" className="space-y-3">
+      <section aria-label="Milestones" className={`space-y-3 ${showLevels ? "" : "hidden"}`}>
         <h2 className="text-2xl">Levels & milestones</h2>
         {summary.levels.map((level) => (
           <div key={level.threshold} className="flex gap-4 border-b py-3">
@@ -137,7 +150,10 @@ function PointsPage() {
       )}
       {master && (
         <>
-          <form onSubmit={award} className="surface my-8 space-y-4 p-5">
+          <form
+            onSubmit={award}
+            className={`surface my-8 space-y-4 p-5 ${showLedger ? "" : "hidden"}`}
+          >
             <h2 className="text-2xl">Record points</h2>
             <p className="text-xs leading-5 text-muted-foreground">
               Suggested rewards: thoughtful check-in +5, accepted routine +10, weekly reflection
@@ -209,10 +225,12 @@ function PointsPage() {
               />
             </div>
             <Button disabled={!allowed || !reason.trim()} type="submit">
-              {busy ? "Saving…" : "Record points"}
+              {busy ? "Saving…" : subName ? `Record for ${subName}` : "Record points"}
             </Button>
           </form>
-          <LevelEditor key={s.space.id ?? "demo"} initial={summary.levels} disabled={!allowed} />
+          {showLevels && (
+            <LevelEditor key={s.space.id ?? "demo"} initial={summary.levels} disabled={!allowed} />
+          )}
         </>
       )}
       {!master && (
@@ -221,7 +239,7 @@ function PointsPage() {
           entry or ask for a correction.
         </p>
       )}
-      <section className="mt-8" aria-label="Points history">
+      <section className={`mt-8 ${showLedger ? "" : "hidden"}`} aria-label="Points history">
         <h2 className="text-2xl">Points history</h2>
         {!summary.ledger.length && (
           <p className="py-6 text-sm text-muted-foreground">
@@ -324,6 +342,8 @@ function PointsPage() {
 
 function LevelEditor({ initial, disabled }: { initial: PointsLevel[]; disabled: boolean }) {
   const [levels, setLevels] = useState(initial.map((item) => ({ ...item })));
+  useUnsavedChanges(JSON.stringify(levels) !== JSON.stringify(initial), "levels and milestones");
+  const subName = useSubName();
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   function patch(index: number, change: Partial<PointsLevel>) {
@@ -405,7 +425,7 @@ function LevelEditor({ initial, disabled }: { initial: PointsLevel[]; disabled: 
         )}
         <div className="flex flex-wrap gap-2">
           <Button disabled={disabled || busy} type="submit">
-            Save levels
+            {subName ? `Save levels for ${subName}` : "Save levels"}
           </Button>
           <Button
             disabled={disabled || busy || levels.length >= 10}

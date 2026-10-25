@@ -26,11 +26,18 @@ const FILTERS: { value: DashboardFilter; label: string }[] = [
   { value: "waiting", label: "Waiting to join" },
 ];
 
-/** Where a card opens. Phase 3 replaces this with the per-Sub profile. */
+/** A Master opens the Sub's profile; a Sub opens their own pages for that relationship. */
 const openRelationship = async (
   navigate: ReturnType<typeof useNavigate>,
-  card: Pick<DashboardCard, "id">,
+  card: Pick<DashboardCard, "id" | "myRole">,
 ) => {
+  if (card.myRole === "dom") {
+    await navigate({
+      to: "/subs/$spaceId/$section",
+      params: { spaceId: card.id, section: "overview" },
+    });
+    return;
+  }
   const result = await spaceActions.open(card.id);
   if (result.ok) await navigate({ to: "/today" });
 };

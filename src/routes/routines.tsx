@@ -23,6 +23,8 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useUnsavedChanges } from "@/lib/nocturne/unsaved";
+import { useProfile, useSubName } from "@/lib/nocturne/profile";
 
 export const Route = createFileRoute("/routines")({
   head: () => ({
@@ -52,10 +54,21 @@ const blank = (): Routine => ({
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
 
 function RoutinesPage() {
-  const s = useNocturne();
+  const s = useNocturne(),
+    profile = useProfile();
   const [edit, setEdit] = useState<Routine | null>(null);
+  // In a Sub's profile, AI drafting has its own section; the routine list stays under Routines.
+  const draftingOnly = profile?.section === "drafting",
+    showDraft = !profile || draftingOnly;
   return (
-    <AppShell eyebrow="Assigned structure. Clear expectations." title="Routines">
+    <AppShell
+      eyebrow={
+        draftingOnly
+          ? "Draft with AI. Nothing saves until you do."
+          : "Assigned structure. Clear expectations."
+      }
+      title={draftingOnly ? "AI drafting" : "Routines"}
+    >
       {edit && s.viewRole === "dom" ? (
         <Editor r={edit} onDone={() => setEdit(null)} />
       ) : (
@@ -66,10 +79,14 @@ function RoutinesPage() {
                 ? "Create and maintain the daily structure here. Check-ins and decisions stay on their own pages."
                 : "Read your assigned routines here. Request a change rather than editing them directly."}
             </p>
-            {s.viewRole === "dom" && <Button onClick={() => setEdit(blank())}>New routine</Button>}
+            {s.viewRole === "dom" && !draftingOnly && (
+              <Button onClick={() => setEdit(blank())}>New routine</Button>
+            )}
           </div>
-          {s.viewRole === "dom" && <RoutineDraft key={s.space.id ?? "demo"} onDraft={setEdit} />}
-          <ul className="mt-6 divide-y divide-border">
+          {s.viewRole === "dom" && showDraft && (
+            <RoutineDraft key={s.space.id ?? "demo"} onDraft={setEdit} />
+          )}
+          <ul className={`mt-6 divide-y divide-border ${draftingOnly ? "hidden" : ""}`}>
             {s.routines.map((r) => (
               <li key={r.id} className="flex items-center justify-between gap-3 py-3">
                 <div className="min-w-0 text-left">
@@ -124,6 +141,8 @@ function RoutinesPage() {
 function Editor({ r: init, onDone }: { r: Routine; onDone: () => void }) {
   const s = useNocturne();
   const [r, setR] = useState(init);
+  const subName = useSubName();
+  useUnsavedChanges(JSON.stringify(r) !== JSON.stringify(init), "a routine");
   const up = (p: Partial<Routine>) => setR({ ...r, ...p });
   const valid =
     r.title.trim() &&
@@ -307,7 +326,11 @@ function Editor({ r: init, onDone }: { r: Routine; onDone: () => void }) {
       ))}
       <div className="flex flex-wrap gap-2 pt-2">
         <Button type="submit" disabled={!valid}>
-          Save
+          {subName
+            ? s.routines.some((x) => x.id === r.id)
+              ? `Save for ${subName}`
+              : `Assign to ${subName}`
+            : "Save"}
         </Button>
         <Button type="button" variant="ghost" onClick={onDone}>
           Cancel

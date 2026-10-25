@@ -146,7 +146,7 @@ try {
   await owner.getByRole("button", { name: "New routine", exact: true }).click();
   await owner.getByLabel("Title", { exact: true }).fill("Browser test routine");
   await owner.getByLabel("Instructions", { exact: true }).fill("A short text check-in.");
-  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await owner.getByRole("button", { name: /^(Assign to|Save for) / }).click();
   await owner.getByText("Browser test routine", { exact: true }).waitFor();
   await guest.goto(`${origin}/routines`);
   await guest.getByText("Browser test routine", { exact: true }).waitFor();
@@ -167,7 +167,7 @@ try {
   await guest.getByRole("button", { name: "Submit for review", exact: true }).click();
   await task.getByText("Awaiting review", { exact: true }).waitFor();
   await owner.goto(`${origin}/proof`);
-  await owner.getByRole("button", { name: "Accept check-in", exact: true }).click();
+  await owner.getByRole("button", { name: /^Accept .*check-in$/ }).click();
   await owner.getByText("No check-ins awaiting review.", { exact: true }).waitFor();
   await guest.reload();
   await guest.getByText("Completed", { exact: true }).waitFor();
@@ -179,11 +179,11 @@ try {
   await owner
     .getByLabel("Reason visible to both people", { exact: true })
     .fill("Recognising reviewed effort");
-  await owner.getByRole("button", { name: "Record points", exact: true }).click();
+  await owner.getByRole("button", { name: /^Record (for |points)/ }).click();
   await owner.getByText("+50 reward points", { exact: true }).waitFor();
   await guest.goto(`${origin}/points`);
   await guest.getByText("+50 reward points", { exact: true }).waitFor();
-  assert.equal(await guest.getByRole("button", { name: "Record points", exact: true }).count(), 0);
+  assert.equal(await guest.getByRole("button", { name: /^Record (for |points)/ }).count(), 0);
   await owner.reload();
   await owner.getByText("+50 reward points", { exact: true }).waitFor();
   await owner.getByRole("button", { name: "Reverse entry", exact: true }).click();
@@ -218,7 +218,8 @@ try {
     await page.goto(`${origin}/discussion`);
     await page.getByLabel("Your message", { exact: true }).fill(message);
     await page.getByRole("button", { name: "Send discussion message", exact: true }).click();
-    await page.getByText(message, { exact: true }).waitFor();
+    // The message can render twice for a moment while the poll and the send both land.
+    await page.getByText(message, { exact: true }).first().waitFor();
   }
   await guest.getByRole("button", { name: "We've discussed — I'm ready", exact: true }).click();
   await guest.getByRole("button", { name: "Waiting for partner", exact: true }).waitFor();
@@ -310,7 +311,7 @@ try {
     "AI draft must remain unsaved",
   );
   await owner.getByLabel("Title", { exact: true }).fill("Telegram browser routine");
-  await owner.getByRole("button", { name: "Save", exact: true }).click();
+  await owner.getByRole("button", { name: /^(Assign to|Save for) / }).click();
   await owner.getByText("Telegram browser routine", { exact: true }).waitFor();
   await owner.unroute("**/api/space");
   console.log("PASS browser: mocked AI draft stays editable and unsaved until explicit Save");
@@ -385,7 +386,20 @@ try {
   assert.equal(await owner.getByText("Browser test routine", { exact: true }).count(), 0);
   await owner.getByRole("button", { name: "New routine", exact: true }).click();
   await owner.getByLabel("Title", { exact: true }).fill("Unsaved other-space draft");
+  // Switching spaces with an unsaved editor asks first; Keep editing stays put.
   await owner.getByLabel("Active space", { exact: true }).selectOption(firstId);
+  await owner
+    .getByRole("alertdialog")
+    .getByText("You have unsaved changes for Demo Second Sub")
+    .waitFor();
+  await owner.getByRole("button", { name: "Keep editing", exact: true }).click();
+  assert.equal(
+    await owner.getByLabel("Title", { exact: true }).inputValue(),
+    "Unsaved other-space draft",
+    "Keep editing must keep the draft",
+  );
+  await owner.getByLabel("Active space", { exact: true }).selectOption(firstId);
+  await owner.getByRole("button", { name: "Discard", exact: true }).click();
   await owner.getByText("Browser test routine", { exact: true }).waitFor();
   assert.equal(
     await owner.getByLabel("Title", { exact: true }).count(),
@@ -409,7 +423,7 @@ try {
   await owner.getByText("Paused. Your space is read-only.", { exact: true }).waitFor();
   await tab.getByRole("button", { name: "New routine", exact: true }).click();
   await tab.getByLabel("Title", { exact: true }).fill("Second space unaffected");
-  await tab.getByRole("button", { name: "Save", exact: true }).click();
+  await tab.getByRole("button", { name: /^(Assign to|Save for) / }).click();
   await tab.getByText("Second space unaffected", { exact: true }).waitFor();
   await owner.getByLabel("Active space", { exact: true }).selectOption(secondId);
   await owner.getByText("Second space unaffected", { exact: true }).waitFor();
@@ -468,6 +482,118 @@ try {
   await secondPartner.getByRole("heading", { name: "My Masters", exact: true }).waitFor();
   assert.equal(await secondPartner.getByText("Demo Aria", { exact: false }).count(), 0);
   console.log("PASS browser: dashboard cards, filters, search and Sub-side isolation");
+  // Phase 3: one Master manages two Subs from their profiles without signing out.
+  const contextFor = async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const api = async (data, query = "") => {
+      const response = data
+        ? await context.request.post(`${origin}/api/space${query}`, { headers: { origin }, data })
+        : await context.request.get(`${origin}/api/space${query}`);
+      return response.json();
+    };
+    const command = async (spaceId, value) => {
+      const current = await api(null, `?space=${spaceId}`);
+      return api({ op: "command", spaceId, revision: current.revision, command: value });
+    };
+    return { context, api, command };
+  };
+  const register = (person, name, email) =>
+    person.api({ op: "auth.register", name, email, password: PASSWORD, adult: true });
+  const nina = await contextFor(),
+    tara = await contextFor(),
+    uma = await contextFor();
+  await register(nina, "Demo Nina", "nina@e2e.test");
+  await register(tara, "Demo Tara", "tara@e2e.test");
+  await register(uma, "Demo Uma", "uma@e2e.test");
+  const pairWith = async (sub, name) => {
+    const created = await nina.api({ op: "create", name: "Demo Nina", role: "dom", adult: true });
+    const id = created.state.space.id;
+    await sub.api({ op: "join", token: created.invite.token, name, adult: true });
+    await nina.command(id, { type: "agreement.ack" });
+    await sub.command(id, { type: "agreement.ack" });
+    return id;
+  };
+  const taraId = await pairWith(tara, "Demo Tara"),
+    umaId = await pairWith(uma, "Demo Uma");
+  await nina.command(umaId, {
+    type: "routine.save",
+    routine: {
+      id: "uma-reading",
+      title: "Uma reading",
+      instructions: "One paragraph.",
+      recurrence: { kind: "daily" },
+      windowStart: "00:00",
+      windowEnd: "23:59",
+      reminderMinutes: null,
+      enabled: true,
+      requiresAck: false,
+      optInDaily: false,
+      proof: "text",
+      revision: 1,
+    },
+  });
+  await uma.command(umaId, { type: "submission", id: "uma-reading", text: "Read chapter two." });
+  const manager = await nina.context.newPage();
+  manager.on("pageerror", (error) => errors.push(error.message));
+  await manager.goto(`${origin}/dashboard`);
+  await manager.getByRole("button", { name: "Open Demo Tara", exact: true }).click();
+  await manager.waitForURL(`**/subs/${taraId}/overview`);
+  assert.equal(await manager.getByLabel("Switch Sub", { exact: true }).inputValue(), taraId);
+  await manager.getByRole("link", { name: "Routines and tasks", exact: true }).click();
+  await manager.waitForURL(`**/subs/${taraId}/routines`);
+  await manager.getByRole("button", { name: "New routine", exact: true }).click();
+  await manager.getByLabel("Title", { exact: true }).fill("Tara only routine");
+  await manager.getByRole("button", { name: "Assign to Demo Tara", exact: true }).click();
+  await manager.getByText("Tara only routine", { exact: true }).waitFor();
+  // An unfinished edit is protected when switching Sub.
+  await manager.getByRole("button", { name: "New routine", exact: true }).click();
+  await manager.getByLabel("Title", { exact: true }).fill("Half typed for Tara");
+  await manager.getByLabel("Switch Sub", { exact: true }).selectOption(umaId);
+  await manager.getByText("You have unsaved changes for Demo Tara", { exact: true }).waitFor();
+  await manager.getByRole("button", { name: "Keep editing", exact: true }).click();
+  assert.ok(manager.url().endsWith(`/subs/${taraId}/routines`), "Keep editing must stay on Tara");
+  assert.equal(
+    await manager.getByLabel("Title", { exact: true }).inputValue(),
+    "Half typed for Tara",
+  );
+  await manager.getByLabel("Switch Sub", { exact: true }).selectOption(umaId);
+  await manager.getByRole("button", { name: "Discard", exact: true }).click();
+  await manager.waitForURL(`**/subs/${umaId}/routines`);
+  await manager.getByText("Uma reading", { exact: true }).waitFor();
+  assert.equal(await manager.getByText("Tara only routine", { exact: true }).count(), 0);
+  assert.equal(await manager.getByText("Half typed for Tara", { exact: true }).count(), 0);
+  await manager.getByRole("link", { name: "Submissions", exact: true }).click();
+  await manager.waitForURL(`**/subs/${umaId}/submissions`);
+  await manager.getByRole("button", { name: "Accept Demo Uma's check-in", exact: true }).click();
+  await manager.getByText("Review decision recorded", { exact: true }).waitFor();
+  const taraState = (await nina.api(null, `?space=${taraId}`)).state;
+  const umaState = (await nina.api(null, `?space=${umaId}`)).state;
+  assert.ok(taraState.routines.some((r) => r.title === "Tara only routine"));
+  assert.ok(!umaState.routines.some((r) => r.title === "Tara only routine"));
+  assert.equal(umaState.submissions[0].status, "accepted");
+  assert.equal(
+    (await nina.api(null, "?account=1")).account.email,
+    "nina@e2e.test",
+    "Switching Subs must keep the same signed-in account",
+  );
+  // Two tabs can hold two different Subs.
+  const secondTab = await nina.context.newPage();
+  await secondTab.goto(`${origin}/subs/${taraId}/routines`);
+  await secondTab.getByText("Tara only routine", { exact: true }).waitFor();
+  await manager.reload();
+  await manager.getByLabel("Switch Sub", { exact: true }).waitFor();
+  assert.equal(await manager.getByLabel("Switch Sub", { exact: true }).inputValue(), umaId);
+  // Editing the URL never opens someone else's relationship.
+  const umaPage = await uma.context.newPage();
+  await umaPage.goto(`${origin}/subs/${taraId}/overview`);
+  await umaPage.getByText("This relationship isn't available to you.", { exact: true }).waitFor();
+  assert.equal(await umaPage.getByText("Demo Tara", { exact: false }).count(), 0);
+  const taraPage = await tara.context.newPage();
+  await taraPage.goto(`${origin}/subs/${taraId}/points`);
+  await taraPage.waitForURL(`**/today`);
+  console.log(
+    "PASS browser: Master → Sub A assign → switch (with unsaved warning) → Sub B review; URL tampering refused",
+  );
   // Sign out ends the session; signing back in on a new device restores every relationship.
   await guest.goto(`${origin}/today`);
   await guest.getByRole("button", { name: "Account menu for Demo Aria", exact: true }).click();

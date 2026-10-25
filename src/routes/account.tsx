@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { accountActions, useAccount } from "@/lib/nocturne/account";
 import { useNocturne, useSpaceConnection } from "@/lib/nocturne/store";
 import { AuthPanel } from "@/components/nocturne/AuthPanel";
+import { confirmDiscard } from "@/lib/nocturne/unsaved";
 
 export const Route = createFileRoute("/account")({
   head: () => ({ meta: [{ title: "My account — BoundSome" }] }),
@@ -162,6 +163,7 @@ function AccountPage() {
               variant="outline"
               className="w-full"
               onClick={async () => {
+                if (!(await confirmDiscard())) return;
                 const result = await accountActions.logout();
                 if (result.ok) await navigate({ to: "/", replace: true });
                 else setPasswordMessage(result.error);
