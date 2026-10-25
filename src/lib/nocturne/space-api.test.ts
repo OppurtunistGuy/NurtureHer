@@ -647,4 +647,16 @@ describe("request and invitation boundaries", () => {
     expect(invitationToken("not a link")).toBe("");
     expect(invitationToken("https://nocturne.test/#invite=short")).toBe("");
   });
+  it("points invites made on a Vercel preview address at the public site", () => {
+    const token = "b".repeat(64);
+    expect(invitationLink("https://boundsome-git-uat-thinkable-co.vercel.app", token)).toBe(
+      `https://boundsome.vercel.app/#invite=${token}`,
+    );
+    expect(invitationLink("https://boundsome.vercel.app", token)).toBe(
+      `https://boundsome.vercel.app/#invite=${token}`,
+    );
+    expect(invitationLink("http://localhost:3000", token)).toBe(
+      `http://localhost:3000/#invite=${token}`,
+    );
+  });
 });

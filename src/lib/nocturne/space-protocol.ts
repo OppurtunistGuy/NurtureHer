@@ -42,6 +42,23 @@ export function invitationToken(input: string): string {
   }
 }
 
+/** The address people should actually use. */
+export const PUBLIC_ORIGIN = "https://boundsome.vercel.app";
+
+/**
+ * Invites made on a Vercel preview address (e.g. the UAT branch) sit behind Vercel's own
+ * sign-in, so the person invited could not open them. Point those at the public address.
+ * Local development and any other host keep the address they were made on.
+ */
+export function publicOrigin(origin: string): string {
+  try {
+    const { hostname } = new URL(origin);
+    return hostname.endsWith(".vercel.app") ? PUBLIC_ORIGIN : origin;
+  } catch {
+    return origin;
+  }
+}
+
 export function invitationLink(origin: string, token: string): string {
-  return `${origin}/#invite=${token}`;
+  return `${publicOrigin(origin)}/#invite=${token}`;
 }

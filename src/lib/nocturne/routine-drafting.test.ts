@@ -49,6 +49,11 @@ describe("AI routine drafting sidecar", () => {
     expect(result.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(result).not.toHaveProperty("dueTime");
     expect(result).not.toHaveProperty("revision");
+    // Telegram verification defaults on in a draft, even though the AI never chooses it.
+    expect(result.telegramVerify).toBe(true);
+    expect(
+      JSON.parse(String(fetcher.mock.calls[0]![1]?.body)).text.format.schema.properties,
+    ).not.toHaveProperty("telegramVerify");
     const [url, options] = fetcher.mock.calls[0]!;
     expect(url).toBe("https://api.openai.com/v1/responses");
     expect(options?.headers).toMatchObject({ authorization: "Bearer server-test-key" });
