@@ -1,3 +1,4 @@
+import { gamesStateSchema } from "./games/schema";
 import { z } from "zod";
 import type { AppState } from "./types";
 import { uid } from "./logic";
@@ -26,6 +27,7 @@ const recurrence = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("once"), date: z.string() }),
 ]);
 export const savedStateSchema = z.object({
+  games: gamesStateSchema.optional(),
   points: pointsStateSchema.default({ ledger: [], levels: DEFAULT_LEVELS }),
   version: z.union([z.literal(1), z.literal(2)]),
   onboarded: z.boolean(),

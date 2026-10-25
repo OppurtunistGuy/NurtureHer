@@ -19,6 +19,7 @@ import {
   useSpaceConnection,
   restoreSharedSpace,
   spaceActions,
+  useGamesEnabled,
 } from "@/lib/nocturne/store";
 import { PauseBanner, PauseButton } from "./PauseControl";
 import { useReminders } from "./useReminders";
@@ -96,6 +97,7 @@ const NAV = [
   { to: "/agreements", label: "Agreement", icon: BookOpen },
   { to: "/activity", label: "Activity", icon: History },
 ] as const;
+const GAMES_NAV = { to: "/games", label: "Games" } as const;
 const MOBILE = [NAV[0], NAV[1], NAV[4], NAV[5]] as const;
 
 export function AppShell({
@@ -117,6 +119,8 @@ export function AppShell({
     profile = useProfile(),
     { pathname } = useLocation();
   useReminders();
+  const gamesOn = useGamesEnabled(),
+    navItems = gamesOn ? [...NAV, GAMES_NAV] : [...NAV];
   if (!s.onboarded)
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
@@ -214,7 +218,7 @@ export function AppShell({
         >
           {profile && <ProfileSections profile={profile} />}
           {!profile &&
-            NAV.map((n) => (
+            navItems.map((n) => (
               <Link
                 key={n.to}
                 to={n.to}
@@ -340,13 +344,15 @@ export function AppShell({
                     <SheetTitle>Explore your space</SheetTitle>
                   </SheetHeader>
                   <nav className="mt-5 grid grid-cols-2 gap-2" aria-label="More pages">
-                    {NAV.filter((n) => !MOBILE.some((m) => m.to === n.to)).map((n) => (
-                      <SheetClose asChild key={n.to}>
-                        <Link to={n.to} className="rounded-md border px-4 py-3 text-sm">
-                          {n.label}
-                        </Link>
-                      </SheetClose>
-                    ))}
+                    {navItems
+                      .filter((n) => !MOBILE.some((m) => m.to === n.to))
+                      .map((n) => (
+                        <SheetClose asChild key={n.to}>
+                          <Link to={n.to} className="rounded-md border px-4 py-3 text-sm">
+                            {n.label}
+                          </Link>
+                        </SheetClose>
+                      ))}
                     <SheetClose asChild>
                       <Link to="/settings" className="rounded-md border px-4 py-3 text-sm">
                         {s.space.mode === "demo" ? "Settings & demo roles" : "Settings"}
