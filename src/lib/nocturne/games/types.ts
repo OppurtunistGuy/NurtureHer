@@ -87,7 +87,29 @@ export interface GameSession {
   /** Card ids already dealt this game, so the deck does not repeat until it runs out. */
   seen: string[];
   stoppedBy?: Role;
-  stopReason?: "stop" | "red";
+  stopReason?: "stop" | "red" | "finished";
+  /** Snakes & Ladders only. */
+  positions?: Record<Role, number> | undefined;
+  /** Game points, kept apart from the real reward points. Deductions only ever touch this. */
+  score?: Record<Role, number> | undefined;
+  /** Who agreed to the Surprise Box. It only works when both did. */
+  box?: Record<Role, boolean> | undefined;
+  /** The Master was bitten: the Sub may open the Surprise Box. */
+  boxPending?: boolean | undefined;
+  /** Who the current card is for, when that isn't whoever's turn it is (a Surprise Box card). */
+  cardFor?: Role | undefined;
+  lastMove?:
+    | {
+        role: Role;
+        die: number;
+        from: number;
+        to: number;
+        event: "none" | "ladder" | "snake" | "card" | "finish";
+        via?: number;
+      }
+    | undefined;
+  lastBox?: { kind: CardKind | "empty"; title: string; points?: number } | undefined;
+  winner?: Role | undefined;
 }
 
 export interface DealContext {

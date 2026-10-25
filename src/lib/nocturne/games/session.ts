@@ -1,5 +1,6 @@
 import type { Role } from "../types";
 import { drawCard } from "./deck";
+import { SNAKES_START } from "./snakes";
 import {
   FREE_SKIPS_PER_PERSON,
   type DealContext,
@@ -20,6 +21,7 @@ export function createSession(
   masterOnlyRoll = false,
 ): GameSession {
   return {
+    ...(game === "snakes" ? SNAKES_START : {}),
     id,
     game,
     masterOnlyRoll,
@@ -51,7 +53,7 @@ export function join(session: GameSession, role: Role): Result<GameSession> {
 export function stop(
   session: GameSession,
   role: Role,
-  reason: "stop" | "red" = "stop",
+  reason: "stop" | "red" | "finished" = "stop",
 ): GameSession {
   if (session.status === "stopped") return session;
   return { ...session, status: "stopped", currentCard: null, stoppedBy: role, stopReason: reason };

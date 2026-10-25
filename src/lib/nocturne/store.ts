@@ -177,11 +177,17 @@ function makeActions<T>(dispatch: (command: Command) => T) {
     sendMessage: (text: string, channel: "notes" | "discussion" = "notes", routineId?: string) =>
       dispatch({ type: "message", text, channel, routineId }),
     setPrefs: (patch: Partial<AppState["prefs"]>) => dispatch({ type: "prefs", patch }),
-    startGame: (game: "dice" | "wheel", heat: Heat, masterOnlyRoll: boolean) =>
-      dispatch({ type: "game.start", game, heat, masterOnlyRoll }),
+    startGame: (
+      game: "dice" | "wheel" | "snakes",
+      heat: Heat,
+      masterOnlyRoll: boolean,
+      box = false,
+    ) => dispatch({ type: "game.start", game, heat, masterOnlyRoll, box }),
+    moveToken: () => dispatch({ type: "game.move" }),
+    openBox: () => dispatch({ type: "game.box" }),
     spinWheel: () => dispatch({ type: "game.spin" }),
     pickCategory: (category: CardCategory) => dispatch({ type: "game.pick", category }),
-    joinGame: () => dispatch({ type: "game.join" }),
+    joinGame: (box = false) => dispatch({ type: "game.join", box }),
     rollDice: () => dispatch({ type: "game.roll" }),
     finishCard: () => dispatch({ type: "game.done" }),
     skipCard: () => dispatch({ type: "game.skip" }),

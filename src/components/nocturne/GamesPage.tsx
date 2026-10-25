@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
+import { SnakesBoard } from "@/components/nocturne/SnakesBoard";
 import { AppShell } from "@/components/nocturne/AppShell";
 import { Button } from "@/components/ui/button";
 import { agreementReady } from "@/lib/nocturne/engine";
@@ -51,7 +52,11 @@ function Die({ value, label }: { value: number | null; label: string }) {
   );
 }
 
-const GAME_NAME: Partial<Record<GameId, string>> = { dice: "Dice Roll", wheel: "Wheel of Fortune" };
+const GAME_NAME: Partial<Record<GameId, string>> = {
+  dice: "Dice Roll",
+  wheel: "Wheel of Fortune",
+  snakes: "Snakes & Ladders",
+};
 const SLICE_LABEL = (slice: (typeof WHEEL_SLICES)[number]) =>
   slice === "again" ? "Spin again" : slice === "choice" ? "Your choice" : CATEGORY_LABEL[slice];
 const SLICE_FILL = [
@@ -127,7 +132,8 @@ export function GamesPage() {
   const s = useNocturne(),
     enabled = useGamesEnabled();
   const [heat, setHeat] = useState<Heat>("spicy"),
-    [game, setGame] = useState<"dice" | "wheel">("dice"),
+    [game, setGame] = useState<"dice" | "wheel" | "snakes">("dice"),
+    [box, setBox] = useState(false),
     [lock, setLock] = useState(false),
     [busy, setBusy] = useState(false);
   const me = s.viewRole,
@@ -162,14 +168,14 @@ export function GamesPage() {
       <section aria-label="Start a game" className="space-y-6">
         {session?.status === "stopped" && (
           <p className="border-l-2 border-wine pl-4 text-sm text-muted-foreground">
-            The last game ended
-            {session.stopReason === "red" ? " with RED" : ""}
-            {session.stoppedBy ? ` — stopped by ${s.names[session.stoppedBy]}` : ""}.
+            {session.stopReason === "finished" && session.winner
+              ? `${s.names[session.winner]} reached square 100 and won the last game.`
+              : `The last game ended${session.stopReason === "red" ? " with RED" : ""}${session.stoppedBy ? ` — stopped by ${s.names[session.stoppedBy]}` : ""}.`}
           </p>
         )}
         <div>
           <div className="mb-4 flex gap-2">
-            {(["dice", "wheel"] as const).map((g) => (
+            {(["dice", "wheel", "snakes"] as const).map((g) => (
               <button
                 key={g}
                 type="button"
@@ -185,7 +191,9 @@ export function GamesPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             {game === "dice"
               ? "Two dice, one card. Die 1 picks the category, die 2 sets the minutes."
-              : "Spin the wheel. It picks a category, or lets you spin again, or hands you the choice."}
+              : game === "wheel"
+                ? "Spin the wheel. It picks a category, or lets you spin again, or hands you the choice."
+                : "Race to 100. Ladders climb, snakes slide, and ◆ squares deal a task. When a snake bites the Master, the Sub gets points and may open the Surprise Box."}
           </p>
         </div>
         <fieldset>
@@ -206,7 +214,25 @@ export function GamesPage() {
             ))}
           </div>
         </fieldset>
-        {me === "dom" && (
+        {game === "snakes" && (
+          <label className="flex items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={box}
+              onChange={(e) => setBox(e.target.checked)}
+            />
+            <span>
+              Include the Surprise Box
+              <span className="block text-xs text-muted-foreground">
+                Opens for the Sub when a snake bites the Master. It can hold a task, a gentle
+                punishment or a game-point deduction. It only switches on if you both tick this. The
+                Sub can skip what it gives with a free skip.
+              </span>
+            </span>
+          </label>
+        )}
+        {me === "dom" && game !== "snakes" && (
           <label className="flex items-center gap-3 text-sm">
             <input type="checkbox" checked={lock} onChange={(e) => setLock(e.target.checked)} />
             Only I {game === "dice" ? "roll" : "spin"}
@@ -218,7 +244,16 @@ export function GamesPage() {
         </p>
         <Button
           disabled={busy}
-          onClick={() => run(() => actions.startGame(game, heat, me === "dom" && lock))}
+          onClick={() =>
+            run(() =>
+              actions.startGame(
+                game,
+                heat,
+                me === "dom" && lock && game !== "snakes",
+                game === "snakes" && box,
+              ),
+            )
+          }
         >
           Start game
         </Button>
@@ -236,8 +271,27 @@ export function GamesPage() {
             ? `Waiting for ${s.names[other]} to join.`
             : `${s.names[other]} started a game. Join when you're ready.`}
         </p>
+        {!joined && session.game === "snakes" && (
+          <label className="flex items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={box}
+              onChange={(e) => setBox(e.target.checked)}
+            />
+            <span>
+              Include the Surprise Box
+              <span className="block text-xs text-muted-foreground">
+                {session.box?.[other]
+                  ? `${s.names[other]} said yes. `
+                  : `${s.names[other]} did not tick this, so it stays off whatever you choose. `}
+                It can give the Sub a task, a gentle punishment or a game-point deduction.
+              </span>
+            </span>
+          </label>
+        )}
         {!joined && (
-          <Button disabled={busy} onClick={() => run(() => actions.joinGame())}>
+          <Button disabled={busy} onClick={() => run(() => actions.joinGame(box))}>
             Join game
           </Button>
         )}
@@ -246,8 +300,15 @@ export function GamesPage() {
   } else {
     const card = session.currentCard,
       myTurn = session.turn === me,
+      myCard = (session.cardFor ?? session.turn) === me,
       isWheel = session.game === "wheel",
-      canRoll = !card && !session.choosing && (session.masterOnlyRoll ? me === "dom" : myTurn);
+      isSnakes = session.game === "snakes",
+      boxOn = !!session.box?.dom && !!session.box?.sub,
+      canRoll =
+        !card &&
+        !session.choosing &&
+        !session.boxPending &&
+        (session.masterOnlyRoll ? me === "dom" : myTurn);
     body = (
       <section aria-label={GAME_NAME[session.game]} className="space-y-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -262,7 +323,33 @@ export function GamesPage() {
             {session.masterOnlyRoll ? ` · Master ${isWheel ? "spins" : "rolls"}` : ""}
           </p>
         </div>
-        {isWheel ? (
+        {isSnakes ? (
+          <div className="space-y-3">
+            <SnakesBoard session={session} names={s.names} />
+            <p className="text-center text-sm text-muted-foreground">
+              Game points · {s.names.dom}: {session.score?.dom ?? 0} · {s.names.sub}:{" "}
+              {session.score?.sub ?? 0}
+              {boxOn ? " · Surprise Box on" : " · Surprise Box off"}
+            </p>
+            {session.lastMove && (
+              <p className="text-center text-sm text-ivory" aria-live="polite">
+                {s.names[session.lastMove.role]} rolled {session.lastMove.die}
+                {session.lastMove.event === "ladder" &&
+                  ` and climbed a ladder from ${session.lastMove.via} to ${session.lastMove.to}.`}
+                {session.lastMove.event === "snake" &&
+                  ` and a snake at ${session.lastMove.via} dragged them to ${session.lastMove.to}.`}
+                {session.lastMove.event === "card" &&
+                  ` and landed on ${session.lastMove.to}: a task square.`}
+                {session.lastMove.event === "none" && ` and moved to ${session.lastMove.to}.`}
+              </p>
+            )}
+            {session.lastBox && !session.boxPending && (
+              <p className="text-center text-xs text-muted-foreground">
+                Last Surprise Box: {session.lastBox.title}
+              </p>
+            )}
+          </div>
+        ) : isWheel ? (
           <Wheel slice={session.lastSpin?.slice ?? null} />
         ) : (
           <div className="flex justify-center gap-8">
@@ -293,16 +380,43 @@ export function GamesPage() {
             )}
           </div>
         )}
-        {!card && !session.choosing && (
+        {session.boxPending && (
+          <div className="space-y-3 rounded-md border border-gold/50 bg-wine-soft/30 p-5 text-center">
+            <p className="font-serif text-lg text-ivory">The snake bit {s.names.dom}!</p>
+            {me === "sub" ? (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  You got 5 game points. Open the Surprise Box if you like.
+                </p>
+                <Button disabled={busy} onClick={() => run(() => actions.openBox())}>
+                  Open the Surprise Box
+                </Button>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Waiting for {s.names.sub} to open the Surprise Box.
+              </p>
+            )}
+          </div>
+        )}
+        {!card && !session.choosing && !session.boxPending && (
           <div className="text-center">
             {isWheel && session.lastSpin && WHEEL_SLICES[session.lastSpin.slice] === "again" && (
               <p className="mb-3 text-sm text-ivory">Spin again!</p>
             )}
             <Button
               disabled={busy || !canRoll}
-              onClick={() => run(() => (isWheel ? actions.spinWheel() : actions.rollDice()))}
+              onClick={() =>
+                run(() =>
+                  isSnakes
+                    ? actions.moveToken()
+                    : isWheel
+                      ? actions.spinWheel()
+                      : actions.rollDice(),
+                )
+              }
             >
-              {isWheel ? "Spin the wheel" : "Roll the dice"}
+              {isSnakes ? "Roll the die" : isWheel ? "Spin the wheel" : "Roll the dice"}
             </Button>
             {!canRoll && (
               <p className="mt-2 text-xs text-muted-foreground">
@@ -333,7 +447,7 @@ export function GamesPage() {
               <Button disabled={busy} onClick={() => run(() => actions.finishCard())}>
                 Done
               </Button>
-              {myTurn && (
+              {myCard && (
                 <Button
                   variant="outline"
                   disabled={busy || session.skips[me] <= 0}

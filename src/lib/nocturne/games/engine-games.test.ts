@@ -138,3 +138,90 @@ describe("games in the engine", () => {
     expect(savedStateSchema.parse(old).games).toBeUndefined();
   });
 });
+
+describe("Snakes & Ladders in the engine", () => {
+  const u32 = (die: number) => Math.floor(((die - 0.5) / 6) * 4294967296);
+  function snakesGame(boxDom: boolean, boxSub: boolean): AppState {
+    let s = run(paired(), "dom", {
+      type: "game.start",
+      game: "snakes",
+      heat: "hot",
+      masterOnlyRoll: false,
+      box: boxDom,
+    });
+    s = run(s, "sub", { type: "game.join", box: boxSub });
+    return s;
+  }
+  const nudge = (s: AppState, dom: number): AppState => ({
+    ...s,
+    games: { ...s.games!, session: { ...s.games!.session!, positions: { dom, sub: 0 } } },
+  });
+
+  it("starts on square 0 with separate game scores and survives a save and reload", () => {
+    const s = snakesGame(true, true);
+    expect(s.games!.session).toMatchObject({
+      game: "snakes",
+      status: "active",
+      positions: { dom: 0, sub: 0 },
+      score: { dom: 0, sub: 0 },
+      box: { dom: true, sub: true },
+    });
+    const reloaded = savedStateSchema.parse(JSON.parse(JSON.stringify(s)));
+    expect(reloaded.games?.session?.positions).toEqual({ dom: 0, sub: 0 });
+    expect(reloaded.games?.session?.box).toEqual({ dom: true, sub: true });
+  });
+
+  it("a Master snake bite gives the Sub points, then only the Sub can open the box", () => {
+    let s = nudge(snakesGame(true, true), 14);
+    s = run(s, "dom", { type: "game.move" }, u32(3));
+    expect(s.games!.session).toMatchObject({
+      boxPending: true,
+      positions: { dom: 7 },
+      score: { sub: 5 },
+    });
+    expect(() => run(s, "dom", { type: "game.box" })).toThrow(/partner/i);
+    expect(() => run(s, "dom", { type: "game.move" })).toThrow();
+    const opened = run(s, "sub", { type: "game.box" }, u32(4));
+    expect(opened.games!.session!.boxPending).toBe(false);
+    expect(opened.games!.session!.lastBox).toBeDefined();
+    // Box text stays out of the shared activity log.
+    const title = opened.games!.session!.lastBox!.title;
+    expect(JSON.stringify(opened.activity)).not.toContain(title);
+  });
+
+  it("the Sub can veto a box task with a free skip, even though it is the Master's turn", () => {
+    let s = nudge(snakesGame(true, true), 14);
+    s = run(s, "dom", { type: "game.move" }, u32(3));
+    // random near 0.7 of u32 range -> punishment/task card, never a deduction
+    let opened = run(s, "sub", { type: "game.box" }, Math.floor(0.7 * 4294967296));
+    expect(opened.games!.session!.cardFor).toBe("sub");
+    expect(() => run(opened, "dom", { type: "game.skip" })).toThrow();
+    opened = run(opened, "sub", { type: "game.skip" });
+    expect(opened.games!.session).toMatchObject({ currentCard: null, turn: "sub" });
+    expect(opened.games!.session!.skips.sub).toBe(1);
+  });
+
+  it("there is no box unless both people said yes", () => {
+    let s = nudge(snakesGame(true, false), 14);
+    s = run(s, "dom", { type: "game.move" }, u32(3));
+    expect(s.games!.session).toMatchObject({ boxPending: false, score: { sub: 5 }, turn: "sub" });
+  });
+
+  it("RED works at any point in Snakes & Ladders, even with a box waiting", () => {
+    let s = nudge(snakesGame(true, true), 14);
+    s = run(s, "dom", { type: "game.move" }, u32(3));
+    s = run(s, "sub", { type: "game.red" });
+    expect(s.games!.session).toMatchObject({ status: "stopped", stopReason: "red" });
+  });
+
+  it("a Master-only roll lock is refused for this game", () => {
+    expect(() =>
+      run(paired(), "dom", {
+        type: "game.start",
+        game: "snakes",
+        heat: "hot",
+        masterOnlyRoll: true,
+      }),
+    ).toThrow();
+  });
+});
