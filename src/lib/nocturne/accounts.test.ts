@@ -69,7 +69,9 @@ async function legacySpace(browser: Browser, name = "Old space") {
 }
 
 for (const backend of ["local SQLite", "remote libSQL"] as const) {
-  describe(`accounts (${backend})`, () => {
+  // Real scrypt hashing (N=32768) runs dozens of times in the throttle tests;
+  // shared CI runners can need more than the 5 s default.
+  describe(`accounts (${backend})`, { timeout: 30_000 }, () => {
     beforeEach(() => {
       directory = mkdtempSync(join(tmpdir(), "boundsome-accounts-"));
       clock = new Date("2026-10-25T12:00:00Z");
