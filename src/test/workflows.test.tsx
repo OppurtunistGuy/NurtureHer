@@ -72,7 +72,8 @@ describe("rendered app workflow", () => {
       fireEvent.change(screen.getByLabelText(label), { target: { value } });
     render(<RouterProvider router={router} />);
     await screen.findByRole("heading", { name: "BoundSome" });
-    expect(screen.getByRole("button", { name: "Create my space" })).toBeDisabled();
+    // Shared spaces need an account: nobody can create one before signing in.
+    expect(screen.queryByRole("button", { name: "Create my space" })).toBeNull();
     await click(screen.getByRole("button", { name: "Try alone first" }));
     await click(screen.getByRole("checkbox"));
     await click(screen.getByRole("radio", { name: /Master/ }));

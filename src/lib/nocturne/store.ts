@@ -267,6 +267,20 @@ async function requestSpace(body?: unknown, spaceId = activeSpace()) {
   const data = await response.json();
   return { response, data };
 }
+/** After sign-out: forget every shared space in this tab and fall back to the solo demo. */
+export function leaveSharedSession() {
+  generation++;
+  try {
+    sessionStorage.removeItem("nocturne.active-space");
+  } catch {
+    /* nothing stored */
+  }
+  loaded = false;
+  state = createInitialState();
+  load();
+  connection = { ...initialConnection, status: "none" };
+  emit();
+}
 export async function restoreSharedSpace() {
   const currentGeneration = generation;
   try {

@@ -16,7 +16,8 @@ export class RoutineDraftError extends Error {
 
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const draftSchema = savedStateSchema.shape.routines.element
-  .omit({ id: true, revision: true })
+  // Verification and rewards are the Master's decision, never part of an AI draft.
+  .omit({ id: true, revision: true, telegramVerify: true, rewardPoints: true })
   .extend({
     title: z.string().trim().min(1).max(60),
     instructions: z.string().max(500),

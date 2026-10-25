@@ -1,4 +1,19 @@
 import { DatabaseSync } from "node:sqlite";
+import {
+  ACCOUNT_MEMBERSHIP_EXPIRES,
+  AUTH_SCHEMA,
+  AuthCore,
+  asyncSql,
+  isPrincipal,
+} from "./auth-core.server";
+import { summarizeSpace } from "./dashboard";
+import {
+  TelegramVerification,
+  VERIFY_SCHEMA,
+  type Answer,
+  type TelegramInput,
+} from "./telegram-verification.server";
+import { dateKey as dayOf } from "./logic";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -178,6 +193,31 @@ export class SpaceRepository {
       });
     }
     this.telegram = new TelegramProofStore(this.db);
+    for (const statement of [...AUTH_SCHEMA, ...VERIFY_SCHEMA]) this.db.exec(statement);
+  }
+  private queue: Promise<unknown> = Promise.resolve();
+  /** Runs async work in one write transaction, one call at a time on this connection. */
+  private serial<T>(fn: () => Promise<T>): Promise<T> {
+    const run = async () => {
+      this.db.exec("BEGIN IMMEDIATE");
+      try {
+        const result = await fn();
+        this.db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        this.db.exec("ROLLBACK");
+        throw error;
+      }
+    };
+    const next = this.queue.then(run, run);
+    this.queue = next.catch(() => {});
+    return next;
+  }
+  auth<T>(fn: (core: AuthCore) => Promise<T>): Promise<T> {
+    return this.serial(() => fn(new AuthCore(asyncSql(this.db), this.now)));
+  }
+  private verification() {
+    return new TelegramVerification(asyncSql(this.db));
   }
   close() {
     this.db.close();
@@ -227,7 +267,7 @@ export class SpaceRepository {
     return {
       telegram: {
         configured: telegramConfigured(),
-        proofs: this.telegram.list(row.id, this.now()),
+        proofs: this.telegram.list(row.id, this.now(), dayOf(this.now(), current.space.timeZone)),
       },
       spaces: this.memberships(session).map((member) => {
         const state = this.state(this.row(member.space_id));
@@ -261,13 +301,23 @@ export class SpaceRepository {
       .run(JSON.stringify(validated), row.id);
   }
   private addMember(spaceId: string, role: Role, session: string) {
+    if (isPrincipal(session)) {
+      // Account memberships are keyed to the server-side account identity.
+      this.db
+        .prepare("INSERT INTO members (session_hash, space_id, role, expires) VALUES (?, ?, ?, ?)")
+        .run(hash(session), spaceId, role, ACCOUNT_MEMBERSHIP_EXPIRES);
+      this.db
+        .prepare("INSERT INTO member_accounts (space_id, role, user_id) VALUES (?, ?, ?)")
+        .run(spaceId, role, session.slice(5));
+      return session;
+    }
     const token = this.memberships(session).length ? session : secret();
     // Keep one anonymous identity across its private relationships.
     this.db
       .prepare("UPDATE members SET expires=? WHERE session_hash=?")
       .run(this.now().valueOf() + SESSION_SECONDS * 1000, hash(token));
     this.db
-      .prepare("INSERT INTO members VALUES (?, ?, ?, ?)")
+      .prepare("INSERT INTO members (session_hash, space_id, role, expires) VALUES (?, ?, ?, ?)")
       .run(hash(token), spaceId, role, this.now().valueOf() + SESSION_SECONDS * 1000);
     return token;
   }
@@ -348,6 +398,22 @@ export class SpaceRepository {
       return { token, snapshot: this.snapshot(this.row(row.id), role, token) };
     });
   }
+  /** One card per relationship this identity belongs to, and nothing else. */
+  dashboard(session: string) {
+    const now = this.now();
+    return this.memberships(session).map((member) => {
+      const row = this.row(member.space_id);
+      const mine =
+        member.role === row.creator_role && row.invite && row.invite_expires > now.valueOf();
+      return summarizeSpace(
+        row.id,
+        this.state(row),
+        member.role,
+        now,
+        mine ? { token: row.invite!, expiresAt: row.invite_expires } : null,
+      );
+    });
+  }
   read(session: string, spaceId?: string) {
     const member = this.member(session, spaceId);
     return this.snapshot(this.row(member.space_id), member.role, session);
@@ -369,18 +435,30 @@ export class SpaceRepository {
       }
     });
   }
-  telegramUpdate(id: number, userId: string, text: string, media: boolean) {
-    return this.transaction(() =>
-      this.telegram.process(
-        id,
-        userId,
-        text,
-        media,
+  telegramUpdate(input: TelegramInput) {
+    return this.serial(() =>
+      this.verification().process(
+        input,
         this.now(),
-        (spaceId) => this.state(this.row(spaceId)),
-        (spaceId, state) => this.save(this.row(spaceId), state),
+        async (spaceId) => this.state(this.row(spaceId)),
+        async (spaceId, state) => this.save(this.row(spaceId), state),
       ),
     );
+  }
+  /** A signed-in member answers Yes/No in the app instead of Telegram. */
+  telegramAnswer(session: string, spaceId: string, ticketId: string, answer: Answer) {
+    return this.serial(async () => {
+      const member = this.member(session, spaceId, true);
+      return this.verification().answerInApp(
+        spaceId,
+        member.role,
+        ticketId,
+        answer,
+        this.now(),
+        async (id) => this.state(this.row(id)),
+        async (id, state) => this.save(this.row(id), state),
+      );
+    });
   }
   change(
     session: string,
