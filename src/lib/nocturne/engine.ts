@@ -1,5 +1,17 @@
 import { dateKey, minutesOf, occursOn, taskKey } from "./logic";
 import type { AppState, Goal, PartnerRequest, Role, Routine, Submission } from "./types";
+import { rollDice } from "./games/dice";
+import { hardLimitsFromState } from "./games/limits";
+import { complete, createSession, join, nextTurn, red, skip, stop, yellow } from "./games/session";
+import { STARTER_DECK } from "./games/starter-deck";
+import {
+  EMPTY_GAMES,
+  HEAT_ORDER,
+  type GameSession,
+  type GamesState,
+  type Heat,
+  type Result,
+} from "./games/types";
 import {
   DEFAULT_LEVELS,
   pointsAwardSchema,
@@ -37,7 +49,17 @@ export type Command =
   | { type: "agreement.ack" }
   | { type: "agreement.propose"; section: string; text: string }
   | { type: "agreement.resolve"; id: string; accept: boolean }
-  | { type: "prefs"; patch: Partial<AppState["prefs"]> };
+  | { type: "prefs"; patch: Partial<AppState["prefs"]> }
+  | { type: "game.start"; game: "dice"; heat: Heat; masterOnlyRoll: boolean }
+  | { type: "game.join" }
+  | { type: "game.roll" }
+  | { type: "game.done" }
+  | { type: "game.skip" }
+  | { type: "game.yellow" }
+  | { type: "game.stop" }
+  | { type: "game.red" }
+  | { type: "game.hide"; cardId: string }
+  | { type: "game.refuse"; cardId: string };
 
 export interface Context {
   now: Date;
@@ -45,7 +67,8 @@ export interface Context {
   random: () => number;
 }
 // Allowlist, not a blacklist: future commands are locked by default during pause.
-const duringPause: Command["type"][] = ["view", "message", "resume"];
+// A game can always be stopped, even while paused: safety first.
+const duringPause: Command["type"][] = ["view", "message", "resume", "game.stop", "game.red"];
 const commander: Command["type"][] = [
   "points.award",
   "points.adjust",
@@ -57,8 +80,41 @@ const commander: Command["type"][] = [
   "review",
   "request.resolve",
   "invite",
+  "game.hide",
 ];
-const partner: Command["type"][] = ["task.prepare", "submission", "challenge", "request"];
+const partner: Command["type"][] = [
+  "task.prepare",
+  "submission",
+  "challenge",
+  "request",
+  "game.refuse",
+];
+
+const ok = (value: GameSession): Result<GameSession> => ({ ok: true, value });
+const gamesOf = (s: AppState): GamesState => s.games ?? EMPTY_GAMES;
+function liveGame(s: AppState): GameSession {
+  const session = gamesOf(s).session;
+  requireThat(session, "There's no game to play. Start one first.");
+  return session;
+}
+const gameDeal = (s: AppState) => ({
+  hardLimits: hardLimitsFromState(s),
+  hidden: gamesOf(s).hidden,
+  notForMe: gamesOf(s).notForMe,
+});
+/** The context's random is a 32-bit integer; games want a number from 0 up to 1. */
+const gameRandom = (ctx: Context) => () => (ctx.random() / 4294967296) % 1;
+function applyGame(
+  s: AppState,
+  result: Result<GameSession>,
+  log: (next: AppState, text: string) => AppState,
+  text?: string,
+): AppState {
+  if (!result.ok) throw new Error(result.error);
+  const next = { ...s, games: { ...gamesOf(s), session: result.value } };
+  // Card text stays out of the shared activity log.
+  return text ? log(next, text) : next;
+}
 export function agreementReady(s: AppState) {
   return !!(s.agreement.ack.dom && s.agreement.ack.sub);
 }
@@ -134,6 +190,8 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
     requireThat(s.onboarded, "Set up the demo first.");
   if (["submission", "challenge", "task.prepare"].includes(cmd.type))
     requireThat(agreementReady(s), "Both people must acknowledge the agreement first.");
+  if (cmd.type.startsWith("game."))
+    requireThat(agreementReady(s), "Both people must acknowledge the agreement before playing.");
   if (cmd.type.startsWith("points."))
     requireThat(
       agreementReady(s),
@@ -211,6 +269,66 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
         { ...s, points: { ledger: s.points?.ledger ?? [], levels } },
         "Updated reward level labels and milestone thresholds.",
       );
+    }
+    case "game.start": {
+      requireThat(s.space.paired, "Games need both people in the space.");
+      requireThat(cmd.game === "dice", "That game isn't available yet.");
+      requireThat(HEAT_ORDER.includes(cmd.heat), "Choose Sweet, Spicy or Hot.");
+      requireThat(
+        !cmd.masterOnlyRoll || by === "dom",
+        "Only the Master can lock the dice to themselves.",
+      );
+      const g = gamesOf(s);
+      requireThat(
+        !g.session || g.session.status === "stopped",
+        "A game is already running. Stop it first.",
+      );
+      const started = join(createSession(ctx.id(), cmd.game, cmd.heat, cmd.masterOnlyRoll), by);
+      return applyGame(
+        s,
+        started,
+        log,
+        "Started a Dice Roll game. Waiting for the other person to join.",
+      );
+    }
+    case "game.join":
+      return applyGame(s, join(liveGame(s), by), log, "Joined the game.");
+    case "game.roll":
+      return applyGame(
+        s,
+        rollDice(liveGame(s), by, STARTER_DECK, gameDeal(s), gameRandom(ctx)),
+        log,
+      );
+    case "game.done": {
+      const finished = complete(liveGame(s));
+      if (!finished.ok) throw new Error(finished.error);
+      return applyGame(s, nextTurn(finished.value), log);
+    }
+    case "game.skip": {
+      const session = liveGame(s);
+      requireThat(session.turn === by, "Only the person whose card it is can skip it.");
+      const skipped = skip(session, by);
+      if (!skipped.ok) throw new Error(skipped.error);
+      return applyGame(s, nextTurn(skipped.value), log);
+    }
+    case "game.yellow": {
+      const skipped = yellow(liveGame(s));
+      if (!skipped.ok) throw new Error(skipped.error);
+      return applyGame(s, nextTurn(skipped.value), log, "YELLOW: skipped the card.");
+    }
+    case "game.stop":
+      return applyGame(s, ok(stop(liveGame(s), by)), log, "Ended the game.");
+    case "game.red":
+      return applyGame(s, ok(red(liveGame(s), by)), log, "RED: ended the game immediately.");
+    case "game.hide": {
+      nonempty(cmd.cardId, 100);
+      const g = gamesOf(s);
+      return { ...s, games: { ...g, hidden: [...new Set([...g.hidden, cmd.cardId])] } };
+    }
+    case "game.refuse": {
+      nonempty(cmd.cardId, 100);
+      const g = gamesOf(s);
+      return { ...s, games: { ...g, notForMe: [...new Set([...g.notForMe, cmd.cardId])] } };
     }
     case "view":
       return { ...s, viewRole: cmd.role, challenge: undefined };

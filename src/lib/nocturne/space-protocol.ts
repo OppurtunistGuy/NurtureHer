@@ -9,6 +9,8 @@ export interface SpaceSummary {
 }
 
 export interface SpaceSnapshot {
+  /** Server switches the client may show. Absent means everything optional is off. */
+  features?: { games: boolean };
   telegram: {
     configured: boolean;
     proofs: {

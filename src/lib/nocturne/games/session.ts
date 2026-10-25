@@ -13,10 +13,16 @@ import {
 const fail = (error: string): Result<GameSession> => ({ ok: false, error });
 const ok = (value: GameSession): Result<GameSession> => ({ ok: true, value });
 
-export function createSession(id: string, game: GameId, heat: Heat): GameSession {
+export function createSession(
+  id: string,
+  game: GameId,
+  heat: Heat,
+  masterOnlyRoll = false,
+): GameSession {
   return {
     id,
     game,
+    masterOnlyRoll,
     heat,
     status: "lobby",
     joined: { dom: false, sub: false },

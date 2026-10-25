@@ -15,6 +15,7 @@ import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as AgreementsRouteImport } from './routes/agreements'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DiscussionRouteImport } from './routes/discussion'
+import { Route as GamesRouteImport } from './routes/games'
 import { Route as GoalsRouteImport } from './routes/goals'
 import { Route as NotesRouteImport } from './routes/notes'
 import { Route as PointsRouteImport } from './routes/points'
@@ -55,6 +56,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const DiscussionRoute = DiscussionRouteImport.update({
   id: '/discussion',
   path: '/discussion',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GamesRoute = GamesRouteImport.update({
+  id: '/games',
+  path: '/games',
   getParentRoute: () => rootRouteImport,
 } as any)
 const GoalsRoute = GoalsRouteImport.update({
@@ -120,6 +126,7 @@ export interface FileRoutesByFullPath {
   '/agreements': typeof AgreementsRoute
   '/dashboard': typeof DashboardRoute
   '/discussion': typeof DiscussionRoute
+  '/games': typeof GamesRoute
   '/goals': typeof GoalsRoute
   '/notes': typeof NotesRoute
   '/points': typeof PointsRoute
@@ -139,6 +146,7 @@ export interface FileRoutesByTo {
   '/agreements': typeof AgreementsRoute
   '/dashboard': typeof DashboardRoute
   '/discussion': typeof DiscussionRoute
+  '/games': typeof GamesRoute
   '/goals': typeof GoalsRoute
   '/notes': typeof NotesRoute
   '/points': typeof PointsRoute
@@ -159,6 +167,7 @@ export interface FileRoutesById {
   '/agreements': typeof AgreementsRoute
   '/dashboard': typeof DashboardRoute
   '/discussion': typeof DiscussionRoute
+  '/games': typeof GamesRoute
   '/goals': typeof GoalsRoute
   '/notes': typeof NotesRoute
   '/points': typeof PointsRoute
@@ -180,6 +189,7 @@ export interface FileRouteTypes {
     | '/agreements'
     | '/dashboard'
     | '/discussion'
+    | '/games'
     | '/goals'
     | '/notes'
     | '/points'
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/agreements'
     | '/dashboard'
     | '/discussion'
+    | '/games'
     | '/goals'
     | '/notes'
     | '/points'
@@ -218,6 +229,7 @@ export interface FileRouteTypes {
     | '/agreements'
     | '/dashboard'
     | '/discussion'
+    | '/games'
     | '/goals'
     | '/notes'
     | '/points'
@@ -238,6 +250,7 @@ export interface RootRouteChildren {
   AgreementsRoute: typeof AgreementsRoute
   DashboardRoute: typeof DashboardRoute
   DiscussionRoute: typeof DiscussionRoute
+  GamesRoute: typeof GamesRoute
   GoalsRoute: typeof GoalsRoute
   NotesRoute: typeof NotesRoute
   PointsRoute: typeof PointsRoute
@@ -292,6 +305,13 @@ declare module '@tanstack/react-router' {
       path: '/discussion'
       fullPath: '/discussion'
       preLoaderRoute: typeof DiscussionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/games': {
+      id: '/games'
+      path: '/games'
+      fullPath: '/games'
+      preLoaderRoute: typeof GamesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/goals': {
@@ -393,6 +413,7 @@ const rootRouteChildren: RootRouteChildren = {
   AgreementsRoute: AgreementsRoute,
   DashboardRoute: DashboardRoute,
   DiscussionRoute: DiscussionRoute,
+  GamesRoute: GamesRoute,
   GoalsRoute: GoalsRoute,
   NotesRoute: NotesRoute,
   PointsRoute: PointsRoute,

@@ -1,3 +1,4 @@
+import type { Heat } from "./games/types";
 import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { dateKey, randomInviteCode, uid } from "./logic";
@@ -176,6 +177,17 @@ function makeActions<T>(dispatch: (command: Command) => T) {
     sendMessage: (text: string, channel: "notes" | "discussion" = "notes", routineId?: string) =>
       dispatch({ type: "message", text, channel, routineId }),
     setPrefs: (patch: Partial<AppState["prefs"]>) => dispatch({ type: "prefs", patch }),
+    startGame: (heat: Heat, masterOnlyRoll: boolean) =>
+      dispatch({ type: "game.start", game: "dice", heat, masterOnlyRoll }),
+    joinGame: () => dispatch({ type: "game.join" }),
+    rollDice: () => dispatch({ type: "game.roll" }),
+    finishCard: () => dispatch({ type: "game.done" }),
+    skipCard: () => dispatch({ type: "game.skip" }),
+    yellowCard: () => dispatch({ type: "game.yellow" }),
+    stopGame: () => dispatch({ type: "game.stop" }),
+    redGame: () => dispatch({ type: "game.red" }),
+    hideCard: (cardId: string) => dispatch({ type: "game.hide", cardId }),
+    refuseCard: (cardId: string) => dispatch({ type: "game.refuse", cardId }),
   };
 }
 export const actions = makeActions(dispatch);
@@ -189,6 +201,7 @@ type Connection = {
   createdByMe: boolean;
   spaces: SpaceSnapshot["spaces"];
   telegram: SpaceSnapshot["telegram"];
+  features: { games: boolean };
 };
 const initialConnection: Connection = {
   status: "checking",
@@ -199,6 +212,7 @@ const initialConnection: Connection = {
   createdByMe: false,
   spaces: [],
   telegram: { configured: false, proofs: [] },
+  features: { games: false },
 };
 let connection = initialConnection;
 let started = false,
@@ -221,6 +235,7 @@ function connect(snapshot: SpaceSnapshot) {
     connection.invite?.token === snapshot.invite?.token &&
     JSON.stringify(connection.spaces) === JSON.stringify(snapshot.spaces) &&
     JSON.stringify(connection.telegram) === JSON.stringify(snapshot.telegram) &&
+    connection.features.games === (snapshot.features?.games ?? false) &&
     connection.status === "connected" &&
     !connection.error
   )
@@ -240,6 +255,7 @@ function connect(snapshot: SpaceSnapshot) {
     createdByMe: snapshot.createdByMe,
     spaces: snapshot.spaces,
     telegram: snapshot.telegram,
+    features: { games: snapshot.features?.games ?? false },
   };
   emit();
 }
@@ -391,4 +407,11 @@ export const spaceActions = {
 };
 export function todayKey() {
   return dateKey(new Date(), state.space.timeZone);
+}
+
+/** True only for a shared space on a server that has Games switched on. */
+export function useGamesEnabled(): boolean {
+  const connection = useSpaceConnection();
+  const s = useNocturne();
+  return s.space.mode === "shared" && connection.features.games;
 }

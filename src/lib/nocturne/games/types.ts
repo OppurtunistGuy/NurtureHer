@@ -47,9 +47,18 @@ export type GameId = "dice" | "wheel" | "snakes";
 
 export type SessionStatus = "lobby" | "active" | "stopped";
 
+/** The last Dice Roll: die 1 picks the category, die 2 sets the minutes (1 to 6). */
+export interface DiceRoll {
+  die1: number;
+  die2: number;
+}
+
 export interface GameSession {
   id: string;
   game: GameId;
+  /** Dice Roll only: when true, only the Master may roll. */
+  masterOnlyRoll: boolean;
+  lastRoll?: DiceRoll | undefined;
   heat: Heat;
   status: SessionStatus;
   /** Both people must join before the first move. */
@@ -80,3 +89,14 @@ export interface DealContext {
 export const FREE_SKIPS_PER_PERSON = 2;
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/** Saved with the space. Optional on AppState so existing spaces are untouched. */
+export interface GamesState {
+  session: GameSession | null;
+  /** Cards the Master hid. */
+  hidden: string[];
+  /** Cards the Sub marked "not for me". */
+  notForMe: string[];
+}
+
+export const EMPTY_GAMES: GamesState = { session: null, hidden: [], notForMe: [] };

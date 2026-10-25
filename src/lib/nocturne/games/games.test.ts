@@ -201,3 +201,62 @@ describe("feature flag", () => {
     expect(gamesEnabled({ GAMES_ENABLED: "1" })).toBe(true);
   });
 });
+
+import { rollDice } from "./dice";
+
+describe("dice roll", () => {
+  const seq = (...values: number[]) => {
+    let i = 0;
+    return () => values[Math.min(i++, values.length - 1)]!;
+  };
+  it("die 1 picks the category and die 2 sets the minutes on a task", () => {
+    // 0.34 -> die 3 (affection); 0.7 -> die 5 minutes; then the draw picks index 0
+    const r = rollDice(active(), "dom", STARTER_DECK, ctx(), seq(0.34, 0.7, 0));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value.lastRoll).toEqual({ die1: 3, die2: 5 });
+    expect(r.value.currentCard!.category).toBe("affection");
+    expect(r.value.currentCard!.timerMinutes).toBe(5);
+  });
+  it("does not override the timer on a reward card", () => {
+    // die 1 = 5 (rewards)
+    const r = rollDice(active(), "dom", STARTER_DECK, ctx({ heat: "sweet" }), seq(0.7, 0.3, 0));
+    if (!r.ok) throw new Error(r.error);
+    expect(r.value.currentCard!.category).toBe("rewards");
+    expect(r.value.currentCard!.timerMinutes).toBeUndefined();
+  });
+  it("only the person whose turn it is can roll, and not before both have joined", () => {
+    expect(rollDice(active(), "sub", STARTER_DECK, ctx())).toMatchObject({
+      ok: false,
+      error: "It isn't your turn to roll.",
+    });
+    const lobby = createSession("x", "dice", "sweet");
+    expect(rollDice(lobby, "dom", STARTER_DECK, ctx())).toMatchObject({ ok: false });
+  });
+  it("when the Master locks the dice, only the Master can roll", () => {
+    const base = active();
+    const locked = { ...base, masterOnlyRoll: true, turn: "sub" as const };
+    expect(rollDice(locked, "sub", STARTER_DECK, ctx())).toMatchObject({
+      ok: false,
+      error: "Only the Master can roll.",
+    });
+    expect(rollDice(locked, "dom", STARTER_DECK, ctx()).ok).toBe(true);
+  });
+  it("never deals a card that crosses a limit, even from the fallback", () => {
+    const bad: GameCard = {
+      id: "bad",
+      title: "Anal play",
+      category: "service",
+      heat: "sweet",
+      kind: "task",
+      limitTags: [],
+    };
+    const r = rollDice(active(), "dom", [bad], ctx({ heat: "sweet" }), () => 0);
+    expect(r).toMatchObject({ ok: false });
+  });
+  it("won't roll while a card is still showing", () => {
+    const first = rollDice(active(), "dom", STARTER_DECK, ctx(), () => 0);
+    if (!first.ok) throw new Error(first.error);
+    expect(rollDice(first.value, "dom", STARTER_DECK, ctx(), () => 0)).toMatchObject({ ok: false });
+  });
+});
