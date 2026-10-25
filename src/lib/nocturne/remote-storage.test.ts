@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RemoteSpaceRepository } from "./remote-storage.server";
 import { handleSpaceRequest } from "./space-api.server";
+import { principal } from "./auth-core.server";
 
 let directory: string;
 let first: RemoteSpaceRepository, second: RemoteSpaceRepository;
@@ -51,6 +52,7 @@ describe("durable remote storage", () => {
         requiresAck: false,
         optInDaily: false,
         proof: "text",
+        telegramVerify: true,
       },
     });
     await command(master.token, { type: "agreement.ack" });
@@ -58,25 +60,31 @@ describe("durable remote storage", () => {
     const m = await first.openTelegram(master.token, id, "daily");
     const s = await second.openTelegram(sub.token, id, "daily");
     expect(m.ticketId).toBe(s.ticketId);
-    await first.telegramUpdate(
-      1,
-      "101",
-      `/start ${new URL(m.link).searchParams.get("start")}`,
-      false,
+    const send = async (updateId: number, userId: string, text: string) =>
+      await first.telegramUpdate({ updateId, userId, text, media: false });
+    await send(1, "101", `/start ${new URL(m.link).searchParams.get("start")}`);
+    await second.telegramUpdate({
+      updateId: 2,
+      userId: "202",
+      text: `/start ${new URL(s.link).searchParams.get("start")}`,
+      media: false,
+    });
+    expect((await send(3, "101", `/yes ${m.ticketId}`)).reply).toContain(
+      "Nothing is completed yet",
     );
-    await second.telegramUpdate(
-      2,
-      "202",
-      `/start ${new URL(s.link).searchParams.get("start")}`,
-      false,
-    );
-    expect(await first.telegramUpdate(3, "101", `/yes ${m.ticketId}`, false)).toContain("Waiting");
     expect((await second.read(sub.token, id)).state.submissions).toHaveLength(0);
-    expect(await second.telegramUpdate(4, "202", `/yes ${s.ticketId}`, false)).toContain(
-      "Proof submitted successfully",
-    );
-    await first.telegramUpdate(4, "202", `/yes ${s.ticketId}`, false);
-    expect((await second.read(sub.token, id)).state.submissions).toHaveLength(1);
+    const done = await second.telegramUpdate({
+      updateId: 4,
+      userId: "202",
+      text: `/yes ${s.ticketId}`,
+      media: false,
+    });
+    expect(done.reply).toContain("marked completed");
+    // The same update delivered to another instance is ignored.
+    expect((await send(4, "202", `/yes ${s.ticketId}`)).reply).toContain("already received");
+    const submissions = (await second.read(sub.token, id)).state.submissions!;
+    expect(submissions).toHaveLength(1);
+    expect(submissions[0]!.status).toBe("accepted");
     await command(sub.token, { type: "pause", signal: "RED", reason: "Check in" });
     await expect(first.openTelegram(master.token, id, "daily")).rejects.toMatchObject({
       status: 400,
@@ -152,19 +160,31 @@ describe("durable remote storage", () => {
     ).rejects.toMatchObject({ status: 400 });
   });
   it("awaits database commit before returning a created-space HTTP response", async () => {
-    const response = await handleSpaceRequest(
-      new Request("https://boundsome.test/api/space", {
-        method: "POST",
-        headers: { origin: "https://boundsome.test", "content-type": "application/json" },
-        body: JSON.stringify({ op: "create", name: "Maya", role: "dom", adult: true }),
-      }),
-      first,
-    );
+    const post = (body: unknown, cookie = "") =>
+      handleSpaceRequest(
+        new Request("https://boundsome.test/api/space", {
+          method: "POST",
+          headers: { origin: "https://boundsome.test", "content-type": "application/json", cookie },
+          body: JSON.stringify(body),
+        }),
+        first,
+      );
+    const registered = await post({
+      op: "auth.register",
+      name: "Maya",
+      email: "maya@example.test",
+      password: "correct horse battery",
+      adult: true,
+    });
+    expect(registered.status).toBe(201);
+    const { account } = await registered.json();
+    const cookie = registered.headers.get("set-cookie")!.split(";")[0]!;
+    const response = await post({ op: "create", name: "Maya", role: "dom", adult: true }, cookie);
     expect(response.status).toBe(201);
     const snapshot = await response.json();
     expect(snapshot.state.names.dom).toBe("Maya");
-    const cookie = response.headers.get("set-cookie")!.split(";")[0]!.split("=")[1]!;
-    expect((await second.read(cookie)).state.space.id).toBe(snapshot.state.space.id);
+    // A second instance sees the committed space under the same account identity.
+    expect((await second.read(principal(account.id))).state.space.id).toBe(snapshot.state.space.id);
   });
   it("does not initialize storage for a visitor with no session", async () => {
     vi.stubEnv("VERCEL", "1");

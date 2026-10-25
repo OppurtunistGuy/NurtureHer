@@ -2,6 +2,8 @@ import { remoteStorageConfig } from "./remote-storage-config.server";
 import { createClient, type Client, type Transaction, type InValue } from "@libsql/client/http";
 import { RemoteRepositoryCore } from "./remote-space-core.server";
 import type { SpaceRepository } from "./space-repository.server";
+import { AUTH_SCHEMA, AuthCore } from "./auth-core.server";
+import { VERIFY_SCHEMA } from "./telegram-verification.server";
 
 type SqlExecutor = Pick<Client, "execute"> | Pick<Transaction, "execute">;
 /** Request-local SQL connection. Never share an open transaction between requests. */
@@ -25,12 +27,27 @@ const schema = [
   "CREATE TABLE IF NOT EXISTS telegram_links (token_hash TEXT PRIMARY KEY, ticket_id TEXT NOT NULL REFERENCES telegram_proofs(id), role TEXT NOT NULL, UNIQUE(ticket_id,role))",
   "CREATE TABLE IF NOT EXISTS telegram_members (space_id TEXT NOT NULL REFERENCES spaces(id), role TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY(space_id,role), UNIQUE(space_id,user_id))",
   "CREATE TABLE IF NOT EXISTS telegram_updates (id INTEGER PRIMARY KEY, at INTEGER NOT NULL)",
+  ...AUTH_SCHEMA,
+  ...VERIFY_SCHEMA,
 ];
 
 export type SpaceStorage = {
-  [K in "create" | "join" | "preview" | "read" | "change" | "openTelegram" | "telegramUpdate"]: (
+  [
+    K in
+      | "create"
+      | "join"
+      | "preview"
+      | "read"
+      | "dashboard"
+      | "change"
+      | "openTelegram"
+      | "telegramUpdate"
+      | "telegramAnswer"
+  ]: (
     ...args: Parameters<SpaceRepository[K]>
   ) => ReturnType<SpaceRepository[K]> | Promise<ReturnType<SpaceRepository[K]>>;
+} & {
+  auth<T>(fn: (core: AuthCore) => Promise<T>): Promise<T>;
 };
 
 /** Durable primary libSQL database, using atomic write transactions across instances.
@@ -53,7 +70,7 @@ export class RemoteSpaceRepository implements SpaceStorage {
     }
     return this.ready;
   }
-  private async invoke<K extends keyof SpaceStorage>(
+  private async invoke<K extends Exclude<keyof SpaceStorage, "auth">>(
     method: K,
     args: Parameters<SpaceRepository[K]>,
   ): Promise<ReturnType<SpaceRepository[K]>> {
@@ -75,6 +92,21 @@ export class RemoteSpaceRepository implements SpaceStorage {
       tx.close();
     }
   }
+  /** Runs account work in one write transaction against the primary database. */
+  async auth<T>(fn: (core: AuthCore) => Promise<T>): Promise<T> {
+    await this.initialize();
+    const tx = await this.client.transaction("write");
+    try {
+      const result = await fn(new AuthCore(new RemoteSql(tx), this.now));
+      await tx.commit();
+      return result;
+    } catch (error) {
+      await tx.rollback().catch(() => {});
+      throw error;
+    } finally {
+      tx.close();
+    }
+  }
   create(...args: Parameters<SpaceRepository["create"]>) {
     return this.invoke("create", args);
   }
@@ -83,6 +115,9 @@ export class RemoteSpaceRepository implements SpaceStorage {
   }
   preview(...args: Parameters<SpaceRepository["preview"]>) {
     return this.invoke("preview", args);
+  }
+  dashboard(...args: Parameters<SpaceRepository["dashboard"]>) {
+    return this.invoke("dashboard", args);
   }
   read(...args: Parameters<SpaceRepository["read"]>) {
     return this.invoke("read", args);
@@ -95,6 +130,9 @@ export class RemoteSpaceRepository implements SpaceStorage {
   }
   telegramUpdate(...args: Parameters<SpaceRepository["telegramUpdate"]>) {
     return this.invoke("telegramUpdate", args);
+  }
+  telegramAnswer(...args: Parameters<SpaceRepository["telegramAnswer"]>) {
+    return this.invoke("telegramAnswer", args);
   }
   close() {
     this.client.close();

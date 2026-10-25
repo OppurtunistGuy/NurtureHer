@@ -5,6 +5,7 @@ import { AppShell } from "@/components/nocturne/AppShell";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
+import { useUnsavedChanges } from "@/lib/nocturne/unsaved";
 
 export const Route = createFileRoute("/agreements")({
   head: () => ({
@@ -26,6 +27,7 @@ function AgreementsPage() {
     me = s.viewRole;
   const [section, setSection] = useState("Boundaries"),
     [text, setText] = useState("");
+  useUnsavedChanges(!!text.trim(), "an agreement proposal");
   const sections =
     a.document?.markdown
       .split(/^### /m)
