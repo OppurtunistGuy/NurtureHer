@@ -1,4 +1,4 @@
-import type { Heat } from "./games/types";
+import type { CardCategory, Heat } from "./games/types";
 import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { dateKey, randomInviteCode, uid } from "./logic";
@@ -177,8 +177,10 @@ function makeActions<T>(dispatch: (command: Command) => T) {
     sendMessage: (text: string, channel: "notes" | "discussion" = "notes", routineId?: string) =>
       dispatch({ type: "message", text, channel, routineId }),
     setPrefs: (patch: Partial<AppState["prefs"]>) => dispatch({ type: "prefs", patch }),
-    startGame: (heat: Heat, masterOnlyRoll: boolean) =>
-      dispatch({ type: "game.start", game: "dice", heat, masterOnlyRoll }),
+    startGame: (game: "dice" | "wheel", heat: Heat, masterOnlyRoll: boolean) =>
+      dispatch({ type: "game.start", game, heat, masterOnlyRoll }),
+    spinWheel: () => dispatch({ type: "game.spin" }),
+    pickCategory: (category: CardCategory) => dispatch({ type: "game.pick", category }),
     joinGame: () => dispatch({ type: "game.join" }),
     rollDice: () => dispatch({ type: "game.roll" }),
     finishCard: () => dispatch({ type: "game.done" }),

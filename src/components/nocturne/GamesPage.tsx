@@ -3,7 +3,14 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/nocturne/AppShell";
 import { Button } from "@/components/ui/button";
 import { agreementReady } from "@/lib/nocturne/engine";
-import { CATEGORY_LABEL, HEAT_ORDER, type Heat } from "@/lib/nocturne/games/types";
+import {
+  CATEGORIES,
+  CATEGORY_LABEL,
+  HEAT_ORDER,
+  WHEEL_SLICES,
+  type GameId,
+  type Heat,
+} from "@/lib/nocturne/games/types";
 import { uiActions as actions, useGamesEnabled, useNocturne } from "@/lib/nocturne/store";
 
 const HEAT_LABEL: Record<Heat, string> = { sweet: "Sweet", spicy: "Spicy", hot: "Hot" };
@@ -44,10 +51,81 @@ function Die({ value, label }: { value: number | null; label: string }) {
   );
 }
 
+const GAME_NAME: Partial<Record<GameId, string>> = { dice: "Dice Roll", wheel: "Wheel of Fortune" };
+const SLICE_LABEL = (slice: (typeof WHEEL_SLICES)[number]) =>
+  slice === "again" ? "Spin again" : slice === "choice" ? "Your choice" : CATEGORY_LABEL[slice];
+const SLICE_FILL = [
+  "#5b1426",
+  "#3a0d19",
+  "#6e1a2e",
+  "#2a2218",
+  "#4a1020",
+  "#7a5a2a",
+  "#2a2218",
+  "#3a0d19",
+];
+
+function polar(angle: number, radius: number): [number, number] {
+  const rad = ((angle - 90) * Math.PI) / 180;
+  return [100 + radius * Math.cos(rad), 100 + radius * Math.sin(rad)];
+}
+
+function Wheel({ slice }: { slice: number | null }) {
+  const rotation = slice === null ? 0 : 1800 - (slice + 0.5) * 45;
+  return (
+    <div
+      role="img"
+      aria-label={
+        slice === null
+          ? "The wheel, not spun yet"
+          : `The wheel landed on ${SLICE_LABEL(WHEEL_SLICES[slice]!)}`
+      }
+      className="relative mx-auto w-full max-w-[18rem]"
+    >
+      <div className="absolute left-1/2 top-[-4px] z-10 h-0 w-0 -translate-x-1/2 border-x-[10px] border-t-[18px] border-x-transparent border-t-gold" />
+      <svg
+        viewBox="0 0 200 200"
+        className="w-full transition-transform duration-[2800ms] ease-out motion-reduce:transition-none"
+        style={{ transform: `rotate(${rotation}deg)` }}
+      >
+        <circle cx="100" cy="100" r="98" fill="#1a0a10" stroke="#c9a45c" strokeWidth="2" />
+        {WHEEL_SLICES.map((name, i) => {
+          const [x1, y1] = polar(i * 45, 94),
+            [x2, y2] = polar((i + 1) * 45, 94),
+            [tx, ty] = polar((i + 0.5) * 45, 62);
+          return (
+            <g key={name}>
+              <path
+                d={`M100 100 L${x1} ${y1} A94 94 0 0 1 ${x2} ${y2} Z`}
+                fill={SLICE_FILL[i]}
+                stroke="#c9a45c"
+                strokeWidth="0.8"
+              />
+              <text
+                x={tx}
+                y={ty}
+                fill="#f0e6d6"
+                fontSize="9"
+                textAnchor="middle"
+                dominantBaseline="middle"
+                transform={`rotate(${(i + 0.5) * 45} ${tx} ${ty})`}
+              >
+                {SLICE_LABEL(name)}
+              </text>
+            </g>
+          );
+        })}
+        <circle cx="100" cy="100" r="9" fill="#c9a45c" />
+      </svg>
+    </div>
+  );
+}
+
 export function GamesPage() {
   const s = useNocturne(),
     enabled = useGamesEnabled();
   const [heat, setHeat] = useState<Heat>("spicy"),
+    [game, setGame] = useState<"dice" | "wheel">("dice"),
     [lock, setLock] = useState(false),
     [busy, setBusy] = useState(false);
   const me = s.viewRole,
@@ -88,9 +166,24 @@ export function GamesPage() {
           </p>
         )}
         <div>
-          <h2 className="font-serif text-lg text-ivory">Dice Roll</h2>
+          <div className="mb-4 flex gap-2">
+            {(["dice", "wheel"] as const).map((g) => (
+              <button
+                key={g}
+                type="button"
+                aria-pressed={game === g}
+                onClick={() => setGame(g)}
+                className={`rounded-md border border-gold/50 px-4 py-2 text-xs uppercase tracking-[0.2em] ${game === g ? "bg-secondary text-ivory" : "opacity-60"}`}
+              >
+                {GAME_NAME[g]}
+              </button>
+            ))}
+          </div>
+          <h2 className="font-serif text-lg text-ivory">{GAME_NAME[game]}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Two dice, one card. Die 1 picks the category, die 2 sets the minutes.
+            {game === "dice"
+              ? "Two dice, one card. Die 1 picks the category, die 2 sets the minutes."
+              : "Spin the wheel. It picks a category, or lets you spin again, or hands you the choice."}
           </p>
         </div>
         <fieldset>
@@ -114,7 +207,7 @@ export function GamesPage() {
         {me === "dom" && (
           <label className="flex items-center gap-3 text-sm">
             <input type="checkbox" checked={lock} onChange={(e) => setLock(e.target.checked)} />
-            Lock the dice: only I roll
+            Only I {game === "dice" ? "roll" : "spin"}
           </label>
         )}
         <p className="text-xs text-muted-foreground">
@@ -123,7 +216,7 @@ export function GamesPage() {
         </p>
         <Button
           disabled={busy}
-          onClick={() => run(() => actions.startGame(heat, me === "dom" && lock))}
+          onClick={() => run(() => actions.startGame(game, heat, me === "dom" && lock))}
         >
           Start game
         </Button>
@@ -133,7 +226,9 @@ export function GamesPage() {
     const joined = session.joined[me];
     body = (
       <section aria-label="Waiting to start" className="space-y-4">
-        <h2 className="font-serif text-lg text-ivory">Dice Roll · {HEAT_LABEL[session.heat]}</h2>
+        <h2 className="font-serif text-lg text-ivory">
+          {GAME_NAME[session.game]} · {HEAT_LABEL[session.heat]}
+        </h2>
         <p className="text-sm text-muted-foreground">
           {joined
             ? `Waiting for ${s.names[other]} to join.`
@@ -149,35 +244,69 @@ export function GamesPage() {
   } else {
     const card = session.currentCard,
       myTurn = session.turn === me,
-      canRoll = !card && (session.masterOnlyRoll ? me === "dom" : myTurn);
+      isWheel = session.game === "wheel",
+      canRoll = !card && !session.choosing && (session.masterOnlyRoll ? me === "dom" : myTurn);
     body = (
-      <section aria-label="Dice Roll" className="space-y-6">
+      <section aria-label={GAME_NAME[session.game]} className="space-y-6">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="font-serif text-lg text-ivory">
-            Dice Roll ·{" "}
+            {GAME_NAME[session.game]} ·{" "}
             <span className={HEAT_TEXT[session.heat].split(" ")[0]}>
               {HEAT_LABEL[session.heat]}
             </span>
           </h2>
           <p className="text-sm text-muted-foreground" aria-live="polite">
             {session.turn ? `${s.names[session.turn]}'s turn` : ""}
-            {session.masterOnlyRoll ? " · Master rolls" : ""}
+            {session.masterOnlyRoll ? ` · Master ${isWheel ? "spins" : "rolls"}` : ""}
           </p>
         </div>
-        <div className="flex justify-center gap-8">
-          <Die value={session.lastRoll?.die1 ?? null} label="Category" />
-          <Die value={session.lastRoll?.die2 ?? null} label="Minutes" />
-        </div>
-        {!card && (
+        {isWheel ? (
+          <Wheel slice={session.lastSpin?.slice ?? null} />
+        ) : (
+          <div className="flex justify-center gap-8">
+            <Die value={session.lastRoll?.die1 ?? null} label="Category" />
+            <Die value={session.lastRoll?.die2 ?? null} label="Minutes" />
+          </div>
+        )}
+        {session.choosing && (
+          <div className="space-y-3 text-center">
+            <p className="font-serif text-lg text-ivory">Your choice</p>
+            {myTurn ? (
+              <div className="flex flex-wrap justify-center gap-2">
+                {CATEGORIES.map((c) => (
+                  <Button
+                    key={c}
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => run(() => actions.pickCategory(c))}
+                  >
+                    {CATEGORY_LABEL[c]}
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Waiting for {s.names[session.turn ?? other]} to pick a category.
+              </p>
+            )}
+          </div>
+        )}
+        {!card && !session.choosing && (
           <div className="text-center">
-            <Button disabled={busy || !canRoll} onClick={() => run(() => actions.rollDice())}>
-              Roll the dice
+            {isWheel && session.lastSpin && WHEEL_SLICES[session.lastSpin.slice] === "again" && (
+              <p className="mb-3 text-sm text-ivory">Spin again!</p>
+            )}
+            <Button
+              disabled={busy || !canRoll}
+              onClick={() => run(() => (isWheel ? actions.spinWheel() : actions.rollDice()))}
+            >
+              {isWheel ? "Spin the wheel" : "Roll the dice"}
             </Button>
             {!canRoll && (
               <p className="mt-2 text-xs text-muted-foreground">
                 {session.masterOnlyRoll
-                  ? `Waiting for ${s.names.dom} to roll.`
-                  : `Waiting for ${s.names[session.turn ?? other]} to roll.`}
+                  ? `Waiting for ${s.names.dom} to ${isWheel ? "spin" : "roll"}.`
+                  : `Waiting for ${s.names[session.turn ?? other]} to ${isWheel ? "spin" : "roll"}.`}
               </p>
             )}
           </div>

@@ -183,4 +183,45 @@ describe("Games over the shared API", () => {
     });
     expect((await creator.command({ type: "game.roll" })).response.status).toBe(400);
   });
+
+  it("plays the wheel through the API, including Your choice", async () => {
+    process.env["GAMES_ENABLED"] = "1";
+    const { creator, partner } = await readyPair();
+    expect(
+      (
+        await creator.command({
+          type: "game.start",
+          game: "wheel",
+          heat: "hot",
+          masterOnlyRoll: false,
+        })
+      ).response.status,
+    ).toBe(200);
+    await partner.request();
+    await partner.command({ type: "game.join" });
+    await creator.request();
+    // Dice commands don't work on a wheel game.
+    expect((await creator.command({ type: "game.roll" })).response.status).toBe(400);
+    expect((await partner.command({ type: "game.spin" })).response.status).toBe(400);
+    expect((await creator.command({ type: "game.pick", category: "bogus" })).response.status).toBe(
+      400,
+    );
+    // Spin until something other than "Spin again"/"Your choice" is dealt, or pick when asked.
+    for (let i = 0; i < 12; i++) {
+      expect((await creator.command({ type: "game.spin" })).response.status).toBe(200);
+      const game = creator.snapshot.state.games!.session!;
+      if (game.choosing) {
+        expect(
+          (await creator.command({ type: "game.pick", category: "affection" })).response.status,
+        ).toBe(200);
+      }
+      if (creator.snapshot.state.games!.session!.currentCard) break;
+    }
+    const card = creator.snapshot.state.games!.session!.currentCard;
+    expect(card).not.toBeNull();
+    expect(creator.snapshot.state.games!.session!.lastSpin).toBeDefined();
+    expect((await creator.command({ type: "game.done" })).response.status).toBe(200);
+    await partner.request();
+    expect(partner.snapshot.state.games!.session!.turn).toBe("sub");
+  });
 });

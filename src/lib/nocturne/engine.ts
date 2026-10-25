@@ -1,12 +1,15 @@
 import { dateKey, minutesOf, occursOn, taskKey } from "./logic";
 import type { AppState, Goal, PartnerRequest, Role, Routine, Submission } from "./types";
 import { rollDice } from "./games/dice";
+import { pickCategory, spinWheel } from "./games/wheel";
 import { hardLimitsFromState } from "./games/limits";
 import { complete, createSession, join, nextTurn, red, skip, stop, yellow } from "./games/session";
 import { STARTER_DECK } from "./games/starter-deck";
 import {
   EMPTY_GAMES,
   HEAT_ORDER,
+  type CardCategory,
+  type GameId,
   type GameSession,
   type GamesState,
   type Heat,
@@ -50,9 +53,11 @@ export type Command =
   | { type: "agreement.propose"; section: string; text: string }
   | { type: "agreement.resolve"; id: string; accept: boolean }
   | { type: "prefs"; patch: Partial<AppState["prefs"]> }
-  | { type: "game.start"; game: "dice"; heat: Heat; masterOnlyRoll: boolean }
+  | { type: "game.start"; game: GameId; heat: Heat; masterOnlyRoll: boolean }
   | { type: "game.join" }
   | { type: "game.roll" }
+  | { type: "game.spin" }
+  | { type: "game.pick"; category: CardCategory }
   | { type: "game.done" }
   | { type: "game.skip" }
   | { type: "game.yellow" }
@@ -272,11 +277,11 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
     }
     case "game.start": {
       requireThat(s.space.paired, "Games need both people in the space.");
-      requireThat(cmd.game === "dice", "That game isn't available yet.");
+      requireThat(cmd.game === "dice" || cmd.game === "wheel", "That game isn't available yet.");
       requireThat(HEAT_ORDER.includes(cmd.heat), "Choose Sweet, Spicy or Hot.");
       requireThat(
         !cmd.masterOnlyRoll || by === "dom",
-        "Only the Master can lock the dice to themselves.",
+        "Only the Master can keep the roll to themselves.",
       );
       const g = gamesOf(s);
       requireThat(
@@ -288,7 +293,7 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
         s,
         started,
         log,
-        "Started a Dice Roll game. Waiting for the other person to join.",
+        `Started a ${cmd.game === "wheel" ? "Wheel of Fortune" : "Dice Roll"} game. Waiting for the other person to join.`,
       );
     }
     case "game.join":
@@ -297,6 +302,18 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
       return applyGame(
         s,
         rollDice(liveGame(s), by, STARTER_DECK, gameDeal(s), gameRandom(ctx)),
+        log,
+      );
+    case "game.spin":
+      return applyGame(
+        s,
+        spinWheel(liveGame(s), by, STARTER_DECK, gameDeal(s), gameRandom(ctx)),
+        log,
+      );
+    case "game.pick":
+      return applyGame(
+        s,
+        pickCategory(liveGame(s), by, cmd.category, STARTER_DECK, gameDeal(s), gameRandom(ctx)),
         log,
       );
     case "game.done": {

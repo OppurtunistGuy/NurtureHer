@@ -43,6 +43,18 @@ export interface GameCard {
   limitTags: string[];
 }
 
+/** Wheel of Fortune slices in order, clockwise from the top: six categories plus two specials. */
+export const WHEEL_SLICES: (CardCategory | "again" | "choice")[] = [
+  "service",
+  "obedience",
+  "affection",
+  "again",
+  "teasing",
+  "rewards",
+  "choice",
+  "confessions",
+];
+
 export type GameId = "dice" | "wheel" | "snakes";
 
 export type SessionStatus = "lobby" | "active" | "stopped";
@@ -59,6 +71,10 @@ export interface GameSession {
   /** Dice Roll only: when true, only the Master may roll. */
   masterOnlyRoll: boolean;
   lastRoll?: DiceRoll | undefined;
+  /** Wheel of Fortune only: the slice the wheel last landed on. */
+  lastSpin?: { slice: number } | undefined;
+  /** Wheel of Fortune only: landed on "Your choice", waiting for a category. */
+  choosing?: boolean | undefined;
   heat: Heat;
   status: SessionStatus;
   /** Both people must join before the first move. */

@@ -19,6 +19,8 @@ const session = z.object({
   lastRoll: z
     .object({ die1: z.number().int().min(1).max(6), die2: z.number().int().min(1).max(6) })
     .optional(),
+  lastSpin: z.object({ slice: z.number().int().min(0).max(7) }).optional(),
+  choosing: z.boolean().optional(),
   heat: heatSchema,
   status: z.enum(["lobby", "active", "stopped"]),
   joined: z.object({ dom: z.boolean(), sub: z.boolean() }),
@@ -40,14 +42,20 @@ export const gameCommandSchemas = [
   z
     .object({
       type: z.literal("game.start"),
-      game: z.literal("dice"),
+      game: z.enum(["dice", "wheel"]),
       heat: heatSchema,
       masterOnlyRoll: z.boolean(),
     })
     .strict(),
-  ...(["join", "roll", "done", "skip", "yellow", "stop", "red"] as const).map((name) =>
+  ...(["join", "roll", "spin", "done", "skip", "yellow", "stop", "red"] as const).map((name) =>
     z.object({ type: z.literal(`game.${name}`) }).strict(),
   ),
+  z
+    .object({
+      type: z.literal("game.pick"),
+      category: z.enum(["service", "obedience", "affection", "teasing", "rewards", "confessions"]),
+    })
+    .strict(),
   z.object({ type: z.literal("game.hide"), cardId: z.string().min(1).max(100) }).strict(),
   z.object({ type: z.literal("game.refuse"), cardId: z.string().min(1).max(100) }).strict(),
 ] as const;
