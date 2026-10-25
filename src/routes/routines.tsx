@@ -112,6 +112,12 @@ function RoutinesPage() {
                       ? ` · Verify on Telegram${r.rewardPoints ? ` · +${r.rewardPoints} points when both say yes` : ""}`
                       : ""}
                   </p>
+                  {r.telegramVerify && !!r.punishmentPoints && (
+                    <p className="mt-1 text-[0.65rem] text-destructive">
+                      If not performed: {r.punishmentPoints} punishment points
+                      {r.punishmentNote ? ` · ${r.punishmentNote}` : ""}
+                    </p>
+                  )}
                 </div>
                 {s.viewRole === "dom" ? (
                   <div className="flex shrink-0 items-center gap-2">
@@ -353,6 +359,35 @@ function Editor({ r: init, onDone }: { r: Routine; onDone: () => void }) {
               <p className="text-xs text-muted-foreground">
                 0 means nothing is added automatically. Added once per day, and can be reversed with
                 a reason on the Points page.
+              </p>
+              <Label htmlFor="routine-punishment">Punishment points if not performed (0–100)</Label>
+              <Input
+                id="routine-punishment"
+                type="number"
+                min={0}
+                max={100}
+                step={1}
+                value={r.punishmentPoints ?? 0}
+                onChange={(e) => {
+                  const value = Math.round(Number(e.target.value));
+                  up({
+                    punishmentPoints: Number.isFinite(value)
+                      ? Math.min(100, Math.max(0, value))
+                      : 0,
+                  });
+                }}
+              />
+              <Label htmlFor="routine-punishment-note">Consequence (optional)</Label>
+              <Input
+                id="routine-punishment-note"
+                maxLength={200}
+                placeholder="For example: write a short reflection"
+                value={r.punishmentNote ?? ""}
+                onChange={(e) => up({ punishmentNote: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Shown to both of you. Never applied automatically: when a task is not performed, you
+                record it with one tap.
               </p>
             </div>
           )}

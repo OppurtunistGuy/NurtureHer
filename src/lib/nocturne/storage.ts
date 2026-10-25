@@ -57,6 +57,8 @@ export const savedStateSchema = z.object({
       // Two-person Telegram verification: both must say yes for the task to pass.
       telegramVerify: z.boolean().optional(),
       rewardPoints: z.number().int().min(0).max(100).optional(),
+      punishmentPoints: z.number().int().min(0).max(100).optional(),
+      punishmentNote: z.string().trim().max(200).optional(),
     }),
   ),
   tasks: z.record(

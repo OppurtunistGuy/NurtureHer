@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { useNocturne, useSpaceConnection, restoreSharedSpace } from "@/lib/nocturne/store";
+import {
+  uiActions,
+  useNocturne,
+  useSpaceConnection,
+  restoreSharedSpace,
+} from "@/lib/nocturne/store";
 
 export function TelegramProof() {
   const state = useNocturne(),
@@ -11,7 +16,33 @@ export function TelegramProof() {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   const [answering, setAnswering] = useState("");
+  const [recording, setRecording] = useState("");
   if (state.space.mode !== "shared") return null;
+  // One punishment entry per not-performed ticket; the id makes a second tap a no-op.
+  const punishmentId = (ticketId: string) => `punish-${ticketId}`;
+  const recorded = (ticketId: string) =>
+    (state.points?.ledger ?? []).some(
+      (entry) => entry.id === punishmentId(ticketId) && !entry.voidedAt,
+    );
+  const recordPunishment = async (
+    ticketId: string,
+    title: string,
+    points: number,
+    note: string,
+  ) => {
+    setRecording(ticketId);
+    try {
+      const result = await uiActions.awardPoints({
+        id: punishmentId(ticketId),
+        kind: "punishment",
+        amount: points,
+        reason: `Not performed: ${title}${note ? ` · ${note}` : ""}`.slice(0, 500),
+      });
+      if (result.ok) toast.success("Punishment recorded");
+    } finally {
+      setRecording("");
+    }
+  };
   const eligible = state.routines.filter(
     (r) => r.enabled && r.proof !== "challenge" && r.telegramVerify,
   );
@@ -128,38 +159,73 @@ export function TelegramProof() {
         </div>
       )}
       <ul className="mt-4 space-y-3 text-xs">
-        {connection.telegram.proofs.map((p) => (
-          <li key={p.id} className="rounded-md border p-3">
-            <p>
-              {state.routines.find((r) => r.id === p.routineId)?.title ?? "Archived routine"} ·{" "}
-              {p.date}
-            </p>
-            <p className="mt-2 text-muted-foreground">
-              {STATUS[p.status] ?? p.status} · {state.names.dom}{" "}
-              {word(p.masterAnswer ?? (p.masterConfirmed ? "yes" : null))} · {state.names.sub}{" "}
-              {word(p.subAnswer ?? (p.subConfirmed ? "yes" : null))}
-            </p>
-            {p.status === "pending" && !p[mine] && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  disabled={!!answering || state.pause.active}
-                  onClick={() => answer(p.id, "yes")}
-                >
-                  {state.myRole === "dom" ? "Yes, I verified it" : "Yes, I did it"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!!answering || state.pause.active}
-                  onClick={() => answer(p.id, "no")}
-                >
-                  {state.myRole === "dom" ? "No, not done" : "No, I didn't"}
-                </Button>
-              </div>
-            )}
-          </li>
-        ))}
+        {connection.telegram.proofs.map((p) => {
+          const routine = state.routines.find((r) => r.id === p.routineId);
+          const consequence =
+            p.status === "not_performed" && routine?.punishmentPoints
+              ? { points: routine.punishmentPoints, note: routine.punishmentNote ?? "" }
+              : null;
+          return (
+            <li key={p.id} className="rounded-md border p-3">
+              <p>
+                {routine?.title ?? "Archived routine"} · {p.date}
+              </p>
+              {consequence && (
+                <div className="mt-2 rounded-md border border-destructive/40 p-2">
+                  <p>
+                    Agreed consequence: {consequence.points} punishment points
+                    {consequence.note ? ` · ${consequence.note}` : ""}
+                  </p>
+                  {state.myRole === "dom" &&
+                    (recorded(p.id) ? (
+                      <p className="mt-1 text-muted-foreground">Punishment recorded.</p>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-2"
+                        disabled={!!recording || state.pause.active}
+                        onClick={() =>
+                          recordPunishment(
+                            p.id,
+                            routine?.title ?? "routine",
+                            consequence.points,
+                            consequence.note,
+                          )
+                        }
+                      >
+                        {recording === p.id ? "Recording…" : "Record punishment"}
+                      </Button>
+                    ))}
+                </div>
+              )}
+              <p className="mt-2 text-muted-foreground">
+                {STATUS[p.status] ?? p.status} · {state.names.dom}{" "}
+                {word(p.masterAnswer ?? (p.masterConfirmed ? "yes" : null))} · {state.names.sub}{" "}
+                {word(p.subAnswer ?? (p.subConfirmed ? "yes" : null))}
+              </p>
+              {p.status === "pending" && !p[mine] && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    disabled={!!answering || state.pause.active}
+                    onClick={() => answer(p.id, "yes")}
+                  >
+                    {state.myRole === "dom" ? "Yes, I verified it" : "Yes, I did it"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!!answering || state.pause.active}
+                    onClick={() => answer(p.id, "no")}
+                  >
+                    {state.myRole === "dom" ? "No, not done" : "No, I didn't"}
+                  </Button>
+                </div>
+              )}
+            </li>
+          );
+        })}
       </ul>
     </details>
   );

@@ -135,12 +135,13 @@ function Dashboard() {
               <h1 className="text-4xl text-ivory md:text-5xl">
                 {hasMasters && !hasSubs ? "My Masters" : "All Subs"}
               </h1>
-              {cards && cards.length > 0 && hasSubs && (
-                <Button onClick={inviteSub} disabled={inviting || connection.busy}>
-                  {inviting ? "Creating invitation…" : "Invite a Sub"}
-                </Button>
-              )}
             </div>
+            {/* One Sub per Master for now: inviting another is hidden until multi-Sub returns. */}
+            {cards && hasSubs && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                One Sub per Master for now. Adding more Subs comes in a later update.
+              </p>
+            )}
             <div className="ornament my-6 text-[0.6rem]" aria-hidden>
               ◆
             </div>

@@ -156,10 +156,41 @@ describe("AI routine drafting sidecar", () => {
     { id: "model-chosen-id" },
     { revision: 999 },
     { injectedCommand: "routine.save" },
+    { telegramVerify: false },
+    { rewardPoints: 101 },
+    { punishmentPoints: -1 },
+    { punishmentPoints: 150 },
+    { punishmentNote: "a".repeat(201) },
   ])("rejects schema or semantic violations: %j", async (change) => {
     await expect(
       draftRoutine("Study check-in", provider({ ...valid, ...change })),
     ).rejects.toMatchObject({ status: 502 });
+  });
+
+  it("returns the AI's suggested reward and consequence for the Master to edit", async () => {
+    const fetcher = provider({
+      ...valid,
+      rewardPoints: 10,
+      punishmentPoints: 5,
+      punishmentNote: "Write a short reflection on what got in the way",
+    });
+    const result = await draftRoutine("Evening study check-in", fetcher);
+    expect(result).toMatchObject({
+      rewardPoints: 10,
+      punishmentPoints: 5,
+      punishmentNote: "Write a short reflection on what got in the way",
+      telegramVerify: true,
+    });
+    const body = JSON.parse(String(fetcher.mock.calls[0]![1]?.body));
+    const schema = body.text.format.schema;
+    expect(schema.required).toEqual(
+      expect.arrayContaining(["rewardPoints", "punishmentPoints", "punishmentNote"]),
+    );
+    expect(schema.properties.punishmentPoints).toMatchObject({ minimum: 0, maximum: 100 });
+    expect(schema.properties.punishmentNote).toMatchObject({ maxLength: 200 });
+    // The instructions keep suggestions safe and editable.
+    expect(body.instructions).toContain("Never suggest physical harm");
+    expect(body.instructions).toContain("the Master can edit");
   });
 
   it("allows a neutral challenge only with daily opt-in", async () => {
