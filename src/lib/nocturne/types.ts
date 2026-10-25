@@ -46,6 +46,12 @@ export interface Routine {
   telegramVerify?: boolean | undefined;
   /** Reward added once when both say yes. 0 or absent = nothing automatic. */
   rewardPoints?: number | undefined;
+  /**
+   * The agreed consequence when the task is not performed: punishment points and a short note.
+   * Never applied automatically; the Master records it with one tap.
+   */
+  punishmentPoints?: number | undefined;
+  punishmentNote?: string | undefined;
 }
 
 export interface TaskRecord {

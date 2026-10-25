@@ -16,9 +16,9 @@ export class RoutineDraftError extends Error {
 
 const time = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const draftSchema = savedStateSchema.shape.routines.element
-  // Rewards stay the Master's decision and are never part of an AI draft. Telegram verification
-  // is also not chosen by the AI, but defaults on below.
-  .omit({ id: true, revision: true, telegramVerify: true, rewardPoints: true })
+  // Telegram verification is never chosen by the AI; it defaults on below. The AI suggests a
+  // reward and a consequence, which the Master edits before anything is saved.
+  .omit({ id: true, revision: true, telegramVerify: true })
   .extend({
     title: z.string().trim().min(1).max(60),
     instructions: z.string().max(500),
@@ -83,6 +83,9 @@ const outputSchema = object({
   requiresAck: { type: "boolean" },
   optInDaily: { type: "boolean" },
   proof: { type: "string", enum: ["confirmation", "text", "challenge"] },
+  rewardPoints: { type: "integer", minimum: 0, maximum: 100 },
+  punishmentPoints: { type: "integer", minimum: 0, maximum: 100 },
+  punishmentNote: { type: "string", maxLength: 200 },
 });
 
 const providerSchema = z.object({
@@ -178,7 +181,7 @@ export async function draftRoutine(
               store: false,
               max_output_tokens: 3000,
               instructions:
-                "Draft one routine for human review, never execute or save it. Use only the user's request, not invented names or private context. Respect consent and safety; do not introduce punishments or mandatory intimate media. Use a same-day HH:mm window with end after start; dueTime must be null or inside that window. Weekdays are unique numbers 0 (Sunday) through 6; once requires a real YYYY-MM-DD date supplied by the user, otherwise use daily. Reminders are null or 0–240 minutes. Default proof is text; challenge is only a neutral written prompt and requires optInDaily true. No camera or media proof. Return JSON matching the schema. Keep instructions practical and under 500 characters.",
+                "Draft one routine for human review, never execute or save it. Use only the user's request, not invented names or private context. Respect consent and safety; never require intimate media. Suggest rewardPoints (0-100) in proportion to the effort, and a modest consequence for when the task is not performed: punishmentPoints (0-100, usually no more than the reward) and punishmentNote, one short, safe, practical consequence the Master can edit, such as an extra small task, an earlier bedtime, or writing a reflection. Never suggest physical harm, pain, injury, restraint, sexual acts, nudity, public humiliation, money or financial penalties, substances, anything illegal, or anything involving other people; if the request asks for that, use a neutral consequence instead. Use 0 points and an empty punishmentNote only if the user asks for no consequence. Use a same-day HH:mm window with end after start; dueTime must be null or inside that window. Weekdays are unique numbers 0 (Sunday) through 6; once requires a real YYYY-MM-DD date supplied by the user, otherwise use daily. Reminders are null or 0–240 minutes. Default proof is text; challenge is only a neutral written prompt and requires optInDaily true. No camera or media proof. Return JSON matching the schema. Keep instructions practical and under 500 characters.",
               input: [{ role: "user", content: [{ type: "input_text", text: parsedPrompt.data }] }],
               text: {
                 format: {
