@@ -226,6 +226,30 @@ for (const backend of ["local SQLite", "remote libSQL"] as const) {
         ).toBe(401);
       });
 
+      it("emails the owner a notice after a reset and after a password change", async () => {
+        const browser = new Browser("192.0.2.30");
+        await browser.register("notice@example.test", "Nia");
+        const changed = await browser.call({
+          op: "auth.password",
+          current: PASSWORD,
+          next: "changed password here",
+        });
+        expect(changed.status).toBe(200);
+        expect(outbox).toHaveLength(1);
+        expect(outbox[0]!.to).toBe("notice@example.test");
+        expect(outbox[0]!.subject).toBe("Your BoundSome password was changed");
+        expect(outbox[0]!.text).toContain("changed from your account page");
+
+        await forgot(new Browser("192.0.2.31"), "notice@example.test");
+        const token = tokenIn(outbox[1])!;
+        expect((await reset(new Browser("192.0.2.32"), token)).status).toBe(200);
+        expect(outbox).toHaveLength(3);
+        expect(outbox[2]!.subject).toBe("Your BoundSome password was changed");
+        expect(outbox[2]!.text).toContain("reset with an emailed link");
+        // The notice never carries a usable link.
+        expect(tokenIn(outbox[2])).toBeUndefined();
+      });
+
       it("rejects expired, unknown and malformed links", async () => {
         await new Browser().register("late@example.test");
         await forgot(new Browser("192.0.2.30"), "late@example.test");

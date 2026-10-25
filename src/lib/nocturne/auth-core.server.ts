@@ -219,18 +219,23 @@ export class AuthCore {
 
   /**
    * Uses a reset token once: sets the new password, ends every sign-in on every device, and
-   * removes the token. Returns false when the token is unknown, used or expired.
+   * removes the token. Returns the account (for the notice email), or undefined when the token
+   * is unknown, used or expired.
    */
-  async completeReset(token: string, passwordHash: string): Promise<boolean> {
+  async completeReset(
+    token: string,
+    passwordHash: string,
+  ): Promise<{ email: string; name: string } | undefined> {
     const row = (await this.db
       .prepare("SELECT user_id, expires FROM password_resets WHERE token_hash=?")
       .get(hashToken(token))) as { user_id: string; expires: number } | undefined;
-    if (!row) return false;
+    if (!row) return undefined;
     await this.db.prepare("DELETE FROM password_resets WHERE user_id=?").run(row.user_id);
-    if (Number(row.expires) <= this.time) return false;
+    if (Number(row.expires) <= this.time) return undefined;
     await this.setPassword(row.user_id, passwordHash);
     await this.db.prepare("DELETE FROM auth_sessions WHERE user_id=?").run(row.user_id);
-    return true;
+    const user = await this.userWithHash(row.user_id);
+    return user ? { email: user.email, name: user.name } : undefined;
   }
 
   /**

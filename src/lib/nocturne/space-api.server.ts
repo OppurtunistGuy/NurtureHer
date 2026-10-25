@@ -108,6 +108,18 @@ function clientIp(request: Request) {
     "local"
   ).slice(0, 64);
 }
+/**
+ * Tells the owner their password changed, so a change they didn't make doesn't go unnoticed.
+ * Best effort: a failed or unconfigured send never undoes the change.
+ */
+async function passwordNotice(user: { email: string; name: string }, how: "reset" | "change") {
+  if (!mailConfigured()) return;
+  await sendMail({
+    to: user.email,
+    subject: "Your BoundSome password was changed",
+    text: `Hi ${user.name},\n\nThe password for your BoundSome account was just ${how === "reset" ? "reset with an emailed link" : "changed from your account page"}. ${how === "reset" ? "Every device was signed out." : "Your other devices were signed out."}\n\nIf this was you, there's nothing to do. If it wasn't, use "Forgot your password?" on the log-in page right away to choose a new one.\n`,
+  });
+}
 let repository: SpaceStorage | undefined;
 function getRepository() {
   if (repository) return repository;
@@ -305,6 +317,7 @@ export async function handleSpaceRequest(
           400,
           "This reset link has expired or was already used. Ask for a new one.",
         );
+      await passwordNotice(done, "reset");
       // Signed out everywhere, including this browser; the person logs in with the new password.
       setCookie(AUTH_COOKIE, "", 0);
       return json({ ok: true });
@@ -338,6 +351,7 @@ export async function handleSpaceRequest(
         await core.setPassword(signedIn.id, passwordHash);
         await core.deleteOtherSessions(signedIn.id, authToken);
       });
+      await passwordNotice(signedIn, "change");
       return json({ ok: true });
     }
     if (input.op === "telegram.answer") {
