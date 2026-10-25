@@ -31,6 +31,8 @@ const routine: Routine = {
   proof: "text",
   telegramVerify: true,
   rewardPoints: 10,
+  punishmentPoints: 5,
+  punishmentNote: "Write a short reflection",
 };
 
 async function webhook(body: Record<string, unknown>, secret = SECRET) {
@@ -285,6 +287,28 @@ for (const backend of ["local SQLite", "remote libSQL"] as const) {
       expect(group.value).toEqual({ ok: true });
       await tap(SUB_TG, ticketId, "y", ++update, "supergroup");
       expect((await state()).telegram.proofs[0].subAnswer).toBeNull();
+    });
+
+    it("never applies the punishment automatically; the Master records it once", async () => {
+      const { ticketId, master, sub, spaceId, state } = await linked();
+      await tap(SUB_TG, ticketId, "n");
+      const after = await state();
+      expect(task(after)).toBe("not_performed");
+      expect(after.state.points.ledger).toHaveLength(0);
+      const entry = {
+        id: `punish-${ticketId}`,
+        kind: "punishment",
+        amount: 5,
+        reason: "Not performed: Morning stretch · Write a short reflection",
+      };
+      // The Sub cannot record points on themselves.
+      expect((await sub.command(spaceId, { type: "points.award", entry })).status).not.toBe(200);
+      expect((await master.command(spaceId, { type: "points.award", entry })).status).toBe(200);
+      // A second tap is refused, so it is recorded once.
+      expect((await master.command(spaceId, { type: "points.award", entry })).status).not.toBe(200);
+      const ledger = (await state()).state.points.ledger;
+      expect(ledger).toHaveLength(1);
+      expect(ledger[0]).toMatchObject({ kind: "punishment", amount: 5 });
     });
 
     it("lets the Master reverse an automatic reward in the app, with a reason", async () => {
