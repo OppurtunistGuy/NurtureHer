@@ -10,6 +10,7 @@ const TONE: Record<TaskStatus, string> = {
   excused: "border-gold/40 text-gold",
   skipped: "border-border text-muted-foreground",
   paused: "border-wine text-ivory",
+  not_performed: "border-destructive/60 text-destructive",
 };
 
 export function StatusBadge({ status }: { status: TaskStatus }) {

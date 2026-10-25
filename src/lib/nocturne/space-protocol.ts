@@ -18,6 +18,8 @@ export interface SpaceSnapshot {
       status: string;
       masterConfirmed: boolean;
       subConfirmed: boolean;
+      masterAnswer?: "yes" | "no" | null;
+      subAnswer?: "yes" | "no" | null;
       mediaReceived: boolean;
     }[];
   };
