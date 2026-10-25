@@ -454,6 +454,10 @@ try {
   await laptop.getByLabel("Email", { exact: true }).fill("aria@e2e.test");
   await laptop.getByLabel("Password", { exact: true }).fill(PASSWORD);
   await laptop.locator('form button[type="submit"]').click();
+  // Wait for the login to finish before moving on, as a person would.
+  await laptop.getByRole("heading", { name: "Welcome back", exact: true }).waitFor({
+    state: "detached",
+  });
   await laptop.goto(`${origin}/today`);
   await laptop.getByLabel("Active space", { exact: true }).waitFor();
   assert.equal(
