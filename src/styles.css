@@ -173,3 +173,60 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
+
+/* Games: motion that answers a move. Turned off for people who prefer less motion. */
+@keyframes games-tumble {
+  0% {
+    transform: rotate(-30deg) scale(0.85);
+  }
+  55% {
+    transform: rotate(320deg) scale(1.06);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+@keyframes games-deal {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes games-lid {
+  to {
+    transform: translateY(-26px) rotate(-14deg);
+  }
+}
+@keyframes games-glow {
+  50% {
+    opacity: 0.55;
+  }
+}
+@utility games-tumble {
+  animation: games-tumble 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@utility games-deal {
+  animation: games-deal 0.45s ease-out;
+}
+@utility games-lid {
+  animation: games-lid 0.5s ease-in forwards;
+  transform-box: fill-box;
+  transform-origin: 20% 100%;
+}
+@utility games-glow {
+  animation: games-glow 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .games-tumble,
+  .games-deal,
+  .games-glow {
+    animation: none;
+  }
+  .games-lid {
+    animation-duration: 0.01s;
+  }
+}
