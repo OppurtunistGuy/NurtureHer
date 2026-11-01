@@ -17,7 +17,9 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as DiscussionRouteImport } from './routes/discussion'
 import { Route as GamesRouteImport } from './routes/games'
 import { Route as GoalsRouteImport } from './routes/goals'
+import { Route as GuideRouteImport } from './routes/guide'
 import { Route as NotesRouteImport } from './routes/notes'
+import { Route as OwnerRouteImport } from './routes/owner'
 import { Route as PointsRouteImport } from './routes/points'
 import { Route as ProofRouteImport } from './routes/proof'
 import { Route as RequestsRouteImport } from './routes/requests'
@@ -68,9 +70,19 @@ const GoalsRoute = GoalsRouteImport.update({
   path: '/goals',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GuideRoute = GuideRouteImport.update({
+  id: '/guide',
+  path: '/guide',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NotesRoute = NotesRouteImport.update({
   id: '/notes',
   path: '/notes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OwnerRoute = OwnerRouteImport.update({
+  id: '/owner',
+  path: '/owner',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PointsRoute = PointsRouteImport.update({
@@ -128,7 +140,9 @@ export interface FileRoutesByFullPath {
   '/discussion': typeof DiscussionRoute
   '/games': typeof GamesRoute
   '/goals': typeof GoalsRoute
+  '/guide': typeof GuideRoute
   '/notes': typeof NotesRoute
+  '/owner': typeof OwnerRoute
   '/points': typeof PointsRoute
   '/proof': typeof ProofRoute
   '/requests': typeof RequestsRoute
@@ -148,7 +162,9 @@ export interface FileRoutesByTo {
   '/discussion': typeof DiscussionRoute
   '/games': typeof GamesRoute
   '/goals': typeof GoalsRoute
+  '/guide': typeof GuideRoute
   '/notes': typeof NotesRoute
+  '/owner': typeof OwnerRoute
   '/points': typeof PointsRoute
   '/proof': typeof ProofRoute
   '/requests': typeof RequestsRoute
@@ -169,7 +185,9 @@ export interface FileRoutesById {
   '/discussion': typeof DiscussionRoute
   '/games': typeof GamesRoute
   '/goals': typeof GoalsRoute
+  '/guide': typeof GuideRoute
   '/notes': typeof NotesRoute
+  '/owner': typeof OwnerRoute
   '/points': typeof PointsRoute
   '/proof': typeof ProofRoute
   '/requests': typeof RequestsRoute
@@ -191,7 +209,9 @@ export interface FileRouteTypes {
     | '/discussion'
     | '/games'
     | '/goals'
+    | '/guide'
     | '/notes'
+    | '/owner'
     | '/points'
     | '/proof'
     | '/requests'
@@ -211,7 +231,9 @@ export interface FileRouteTypes {
     | '/discussion'
     | '/games'
     | '/goals'
+    | '/guide'
     | '/notes'
+    | '/owner'
     | '/points'
     | '/proof'
     | '/requests'
@@ -231,7 +253,9 @@ export interface FileRouteTypes {
     | '/discussion'
     | '/games'
     | '/goals'
+    | '/guide'
     | '/notes'
+    | '/owner'
     | '/points'
     | '/proof'
     | '/requests'
@@ -252,7 +276,9 @@ export interface RootRouteChildren {
   DiscussionRoute: typeof DiscussionRoute
   GamesRoute: typeof GamesRoute
   GoalsRoute: typeof GoalsRoute
+  GuideRoute: typeof GuideRoute
   NotesRoute: typeof NotesRoute
+  OwnerRoute: typeof OwnerRoute
   PointsRoute: typeof PointsRoute
   ProofRoute: typeof ProofRoute
   RequestsRoute: typeof RequestsRoute
@@ -321,11 +347,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GoalsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/guide': {
+      id: '/guide'
+      path: '/guide'
+      fullPath: '/guide'
+      preLoaderRoute: typeof GuideRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/notes': {
       id: '/notes'
       path: '/notes'
       fullPath: '/notes'
       preLoaderRoute: typeof NotesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/owner': {
+      id: '/owner'
+      path: '/owner'
+      fullPath: '/owner'
+      preLoaderRoute: typeof OwnerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/points': {
@@ -415,7 +455,9 @@ const rootRouteChildren: RootRouteChildren = {
   DiscussionRoute: DiscussionRoute,
   GamesRoute: GamesRoute,
   GoalsRoute: GoalsRoute,
+  GuideRoute: GuideRoute,
   NotesRoute: NotesRoute,
+  OwnerRoute: OwnerRoute,
   PointsRoute: PointsRoute,
   ProofRoute: ProofRoute,
   RequestsRoute: RequestsRoute,

@@ -37,7 +37,31 @@ export const AUTH_SCHEMA = [
   "CREATE TABLE IF NOT EXISTS password_resets (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL, expires INTEGER NOT NULL, created INTEGER NOT NULL)",
   "CREATE INDEX IF NOT EXISTS password_resets_user ON password_resets(user_id)",
   "CREATE TABLE IF NOT EXISTS member_accounts (space_id TEXT NOT NULL, role TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY(space_id, role))",
+  // Invite-only access: the owner's single-use links. Only a hash of each code is stored.
+  "CREATE TABLE IF NOT EXISTS access_invites (code_hash TEXT PRIMARY KEY, label TEXT NOT NULL, created INTEGER NOT NULL, expires INTEGER NOT NULL, used_by TEXT, used_at INTEGER, revoked_at INTEGER)",
+  "CREATE TABLE IF NOT EXISTS feedback (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, text TEXT NOT NULL, page TEXT, created INTEGER NOT NULL)",
+  "CREATE INDEX IF NOT EXISTS feedback_user ON feedback(user_id, created)",
 ];
+
+export const ACCESS_DAYS = 7;
+export const FEEDBACK_PER_HOUR = 10;
+export type AccessStatus = "valid" | "used" | "expired" | "revoked" | "unknown";
+export type AccessInviteRow = {
+  id: string;
+  label: string;
+  created: number;
+  expires: number;
+  status: Exclude<AccessStatus, "unknown">;
+  usedBy: { name: string; email: string } | null;
+  usedAt: number | null;
+};
+export type FeedbackRow = {
+  id: string;
+  text: string;
+  page: string | null;
+  created: number;
+  from: { name: string; email: string };
+};
 
 export const hashToken = (value: string) => createHash("sha256").update(value).digest("hex");
 export const newToken = () => randomBytes(32).toString("hex");
@@ -236,6 +260,123 @@ export class AuthCore {
     await this.db.prepare("DELETE FROM auth_sessions WHERE user_id=?").run(row.user_id);
     const user = await this.userWithHash(row.user_id);
     return user ? { email: user.email, name: user.name } : undefined;
+  }
+
+  /** A new single-use access link code for the owner to send. Only its hash is stored. */
+  async createAccessInvite(label: string) {
+    const code = randomBytes(16).toString("hex");
+    const expires = this.time + ACCESS_DAYS * 24 * 60 * 60 * 1000;
+    await this.db
+      .prepare(
+        "INSERT INTO access_invites (code_hash, label, created, expires) VALUES (?, ?, ?, ?)",
+      )
+      .run(hashToken(code), label.trim(), this.time, expires);
+    return { code, expires };
+  }
+
+  async accessStatus(code: string): Promise<AccessStatus> {
+    const row = (await this.db
+      .prepare("SELECT expires, used_by, revoked_at FROM access_invites WHERE code_hash=?")
+      .get(hashToken(code))) as
+      { expires: number; used_by: string | null; revoked_at: number | null } | undefined;
+    if (!row) return "unknown";
+    if (row.revoked_at) return "revoked";
+    if (row.used_by) return "used";
+    if (Number(row.expires) <= this.time) return "expired";
+    return "valid";
+  }
+
+  /** Marks a valid code as used by this account. Call inside the same transaction as the sign-up. */
+  async redeemAccess(code: string, userId: string) {
+    await this.db
+      .prepare(
+        "UPDATE access_invites SET used_by=?, used_at=? WHERE code_hash=? AND used_by IS NULL AND revoked_at IS NULL",
+      )
+      .run(userId, this.time, hashToken(code));
+  }
+
+  async listAccessInvites(): Promise<AccessInviteRow[]> {
+    const rows = (await this.db
+      .prepare(
+        "SELECT a.code_hash AS id, a.label, a.created, a.expires, a.used_at, a.revoked_at, u.name AS user_name, u.email AS user_email, a.used_by FROM access_invites a LEFT JOIN users u ON u.id = a.used_by ORDER BY a.created DESC LIMIT 200",
+      )
+      .all()) as {
+      id: string;
+      label: string;
+      created: number;
+      expires: number;
+      used_at: number | null;
+      revoked_at: number | null;
+      used_by: string | null;
+      user_name: string | null;
+      user_email: string | null;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      label: row.label,
+      created: Number(row.created),
+      expires: Number(row.expires),
+      status: row.revoked_at
+        ? "revoked"
+        : row.used_by
+          ? "used"
+          : Number(row.expires) <= this.time
+            ? "expired"
+            : "valid",
+      usedBy: row.used_by ? { name: row.user_name ?? "", email: row.user_email ?? "" } : null,
+      usedAt: row.used_at ? Number(row.used_at) : null,
+    }));
+  }
+
+  /** Revokes an unused link. Returns false when it is unknown or already used. */
+  async revokeAccess(id: string) {
+    const row = (await this.db
+      .prepare("SELECT used_by, revoked_at FROM access_invites WHERE code_hash=?")
+      .get(id)) as { used_by: string | null; revoked_at: number | null } | undefined;
+    if (!row || row.used_by) return false;
+    if (!row.revoked_at)
+      await this.db
+        .prepare("UPDATE access_invites SET revoked_at=? WHERE code_hash=?")
+        .run(this.time, id);
+    return true;
+  }
+
+  /** Saves feedback; false when this account already sent the hourly maximum. */
+  async addFeedback(userId: string, text: string, page: string | null) {
+    const recent = Number(
+      (
+        (await this.db
+          .prepare("SELECT COUNT(*) AS n FROM feedback WHERE user_id=? AND created>?")
+          .get(userId, this.time - 60 * 60 * 1000)) as { n: number | bigint }
+      ).n,
+    );
+    if (recent >= FEEDBACK_PER_HOUR) return false;
+    await this.db
+      .prepare("INSERT INTO feedback (id, user_id, text, page, created) VALUES (?, ?, ?, ?, ?)")
+      .run(randomUUID(), userId, text.trim(), page, this.time);
+    return true;
+  }
+
+  async listFeedback(): Promise<FeedbackRow[]> {
+    const rows = (await this.db
+      .prepare(
+        "SELECT f.id, f.text, f.page, f.created, u.name, u.email FROM feedback f JOIN users u ON u.id = f.user_id ORDER BY f.created DESC LIMIT 200",
+      )
+      .all()) as {
+      id: string;
+      text: string;
+      page: string | null;
+      created: number;
+      name: string;
+      email: string;
+    }[];
+    return rows.map((row) => ({
+      id: row.id,
+      text: row.text,
+      page: row.page,
+      created: Number(row.created),
+      from: { name: row.name, email: row.email },
+    }));
   }
 
   /**

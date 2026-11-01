@@ -28,12 +28,36 @@ const timeZone = z
     }
   })
   .default("UTC");
+const accessCode = z.string().regex(/^[a-f0-9]{32}$/);
 const email = z.string().trim().toLowerCase().email().max(254),
   password = z.string().min(10).max(200);
 const requestSchema = z.discriminatedUnion("op", [
   z
-    .object({ op: z.literal("auth.register"), email, name, password, adult: z.literal(true) })
+    .object({
+      op: z.literal("auth.register"),
+      email,
+      name,
+      password,
+      adult: z.literal(true),
+      // Invite-only: an owner's access link, or a Master's live invitation to their space.
+      access: accessCode.optional(),
+      invite: token.optional(),
+    })
     .strict(),
+  z.object({ op: z.literal("access.check"), code: accessCode }).strict(),
+  z
+    .object({
+      op: z.literal("feedback.send"),
+      text: z.string().trim().min(3).max(2000),
+      page: z.string().max(200).optional(),
+    })
+    .strict(),
+  z
+    .object({ op: z.literal("owner.access.create"), label: z.string().trim().min(1).max(60) })
+    .strict(),
+  z.object({ op: z.literal("owner.access.list") }).strict(),
+  z.object({ op: z.literal("owner.access.revoke"), id: token }).strict(),
+  z.object({ op: z.literal("owner.feedback.list") }).strict(),
   z.object({ op: z.literal("auth.login"), email, password: z.string().min(1).max(200) }).strict(),
   z.object({ op: z.literal("auth.logout") }).strict(),
   z.object({ op: z.literal("auth.forgot"), email }).strict(),
@@ -94,6 +118,30 @@ const AUTH_MESSAGES: Record<string, string> = {
   "auth.rename": "Enter a name of up to 40 characters.",
 };
 const LOGIN_FAILED = "That email and password don't match an account.";
+const INVITE_ONLY =
+  "BoundSome is invite-only right now. Open the invite link you were sent to create your account.";
+const ACCESS_MESSAGES: Record<string, string> = {
+  used: "This invite link has already been used. Ask for a new one, or log in if it was yours.",
+  expired: "This invite link has expired. Ask for a new one.",
+  revoked: "This invite link was cancelled. Ask for a new one.",
+  unknown: "This invite link isn't valid. Check you copied all of it, or ask for a new one.",
+};
+/** Open sign-up is only for automated tests and local smoke runs; production stays invite-only. */
+const openSignup = () => process.env["OPEN_SIGNUP"] === "1";
+/** The owner(s) who can create access links and read feedback, by account email. */
+export const isOwner = (account: Account | undefined) =>
+  !!account &&
+  (process.env["OWNER_EMAILS"] ?? "")
+    .split(",")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean)
+    .includes(account.email.toLowerCase());
+export const aiConfigured = () =>
+  !!(
+    process.env["OPENAI_API_KEY"]?.trim() ||
+    process.env["AI_GATEWAY_API_KEY"]?.trim() ||
+    process.env["VERCEL_OIDC_TOKEN"]?.trim()
+  );
 function readCookies(header: string | null) {
   const cookies: Record<string, string> = {};
   for (const part of header?.split(";") ?? []) {
@@ -222,6 +270,8 @@ export async function handleSpaceRequest(
       return json({
         account: account ?? null,
         legacySpaces: !account && legacy ? await db.auth((core) => core.legacyCount(legacy)) : 0,
+        owner: isOwner(account),
+        features: { ai: aiConfigured(), inviteOnly: !openSignup() },
       });
     if (request.method === "GET" && url.searchParams.has("dashboard")) {
       if (!account) throw new SpaceError(401, "Log in to open your dashboard.");
@@ -238,13 +288,29 @@ export async function handleSpaceRequest(
     if (input.op === "auth.register" || input.op === "auth.login") {
       let user: Account;
       if (input.op === "auth.register") {
+        // Invite-only gate, checked on the server. A Master's live invitation is enough for a Sub;
+        // anyone else needs one of the owner's single-use access links.
+        if (!openSignup() && !input.access) {
+          if (!input.invite) throw new SpaceError(403, INVITE_ONLY);
+          await db.preview(input.invite); // throws when the invitation is unknown or expired
+        }
         const passwordHash = await hashPassword(input.password);
-        const created = await db.auth((core) =>
-          core.createUser(input.email, input.name, passwordHash),
-        );
-        if (!created)
+        const access = openSignup() ? undefined : input.access;
+        const created = await db.auth(async (core) => {
+          if (access) {
+            const status = await core.accessStatus(access);
+            if (status !== "valid") return { error: ACCESS_MESSAGES[status]! };
+          }
+          const made = await core.createUser(input.email, input.name, passwordHash);
+          if (!made) return { error: "" };
+          if (access) await core.redeemAccess(access, made.id);
+          return { user: made };
+        });
+        if ("error" in created) {
+          if (created.error) throw new SpaceError(403, created.error);
           throw new SpaceError(409, "An account with this email already exists. Log in instead.");
-        user = created;
+        }
+        user = created.user;
       } else {
         const ip = clientIp(request);
         const limit = await db.auth((core) => core.throttle(input.email, ip));
@@ -325,6 +391,49 @@ export async function handleSpaceRequest(
       // Signed out everywhere, including this browser; the person logs in with the new password.
       setCookie(AUTH_COOKIE, "", 0);
       return json({ ok: true });
+    }
+    if (input.op === "access.check") {
+      const status = await db.auth((core) => core.accessStatus(input.code));
+      return json({ status, ...(status === "valid" ? {} : { error: ACCESS_MESSAGES[status] }) });
+    }
+    if (input.op === "feedback.send") {
+      if (!account) throw new SpaceError(401, "Log in to send feedback.");
+      const signedIn = account;
+      const saved = await db.auth((core) =>
+        core.addFeedback(signedIn.id, input.text, input.page ?? null),
+      );
+      if (!saved)
+        throw new SpaceError(429, "Thanks! You've sent a lot this hour. Try again later.");
+      return json({ ok: true }, 201);
+    }
+    if (
+      input.op === "owner.access.create" ||
+      input.op === "owner.access.list" ||
+      input.op === "owner.access.revoke" ||
+      input.op === "owner.feedback.list"
+    ) {
+      if (!account) throw new SpaceError(401, "Log in to open the owner page.");
+      if (!isOwner(account)) throw new SpaceError(403, "This page is for the BoundSome owner.");
+      if (input.op === "owner.access.create") {
+        const label = input.label;
+        const made = await db.auth((core) => core.createAccessInvite(label));
+        return json(
+          {
+            link: `${publicOrigin(url.origin)}/dashboard#access=${made.code}`,
+            expires: made.expires,
+          },
+          201,
+        );
+      }
+      if (input.op === "owner.access.list")
+        return json({ invites: await db.auth((core) => core.listAccessInvites()) });
+      if (input.op === "owner.access.revoke") {
+        const id = input.id;
+        if (!(await db.auth((core) => core.revokeAccess(id))))
+          throw new SpaceError(409, "That link was already used, so it can't be cancelled.");
+        return json({ ok: true });
+      }
+      return json({ feedback: await db.auth((core) => core.listFeedback()) });
     }
     if (input.op === "auth.logout") {
       if (authToken) await db.auth((core) => core.deleteSession(authToken));

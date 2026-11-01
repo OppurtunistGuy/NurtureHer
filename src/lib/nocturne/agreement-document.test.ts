@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { AGREEMENT_MARKDOWN, AGREEMENT_VERSION, upgradeAgreement } from "./agreement-document";
+import {
+  AGREEMENT_MARKDOWN,
+  AGREEMENT_VERSION,
+  PERSONAL_AGREEMENT_MARKDOWN,
+  PERSONAL_AGREEMENT_VERSION,
+  upgradeAgreement,
+} from "./agreement-document";
 import { createInitialState } from "./store";
 import { readStoredState } from "./storage";
 import { transition } from "./engine";
@@ -46,29 +52,49 @@ describe("supplied Master & Sub Agreement", () => {
       expect(next.routines).toEqual(state.routines);
     },
   );
-  it("installs the full text, exact hard limits, safety signals and pending acknowledgements", () => {
+  it("starts new spaces with the neutral template: no one's personal limits", () => {
     const s = createInitialState();
     expect(s.agreement.document).toEqual({
       version: AGREEMENT_VERSION,
       markdown: AGREEMENT_MARKDOWN,
     });
     expect(AGREEMENT_MARKDOWN.match(/^### [1-7]\. /gm)).toHaveLength(7);
-    expect(AGREEMENT_MARKDOWN).toContain("**The Master’s discretion**");
-    expect(AGREEMENT_MARKDOWN).toContain(
-      "Until December 16, the dynamic will focus on agreed BDSM sessions due to exams and family commitments.",
-    );
-    expect(AGREEMENT_MARKDOWN).toContain(
-      "This agreement is a shared understanding of the dynamic, not a waiver of either person's right to stop or withdraw consent.",
-    );
-    expect(s.agreement.excluded).toEqual([
-      "Anal play",
-      "Tasting or ingesting semen",
-      "Panties-in-mouth nasty activities",
-    ]);
+    expect(AGREEMENT_MARKDOWN).not.toContain("December 16");
+    expect(AGREEMENT_MARKDOWN).not.toContain("exams");
+    expect(AGREEMENT_MARKDOWN).toContain("not a waiver of either person's right to stop");
+    expect(s.agreement.excluded).toEqual([]);
+    expect(s.agreement.commWindows).toBe("To be agreed together.");
     expect(s.agreement.safeword).toBe("RED");
     expect(s.agreement.checkInSignal).toBe("YELLOW");
     expect(s.agreement.ack).toEqual({ dom: null, sub: null });
   });
+  it.each([false, true])(
+    "keeps an existing space's personal agreement and acknowledgements untouched (paused=%s)",
+    (paused) => {
+      const state = createInitialState();
+      state.agreement.document = {
+        version: PERSONAL_AGREEMENT_VERSION,
+        markdown: PERSONAL_AGREEMENT_MARKDOWN,
+      };
+      state.agreement.excluded = ["Our own limit"];
+      state.agreement.ack = { dom: stamp, sub: stamp };
+      state.pause.active = paused;
+      expect(upgradeAgreement(state, now)).toBe(state);
+      expect(readStoredState(JSON.stringify(state)).agreement).toEqual(state.agreement);
+      // The legacy product heading is still renamed without touching anything else.
+      state.agreement.document.markdown = PERSONAL_AGREEMENT_MARKDOWN.replace(
+        /^# BoundSome/,
+        "# NOCTURNE TOGETHER",
+      );
+      const renamed = upgradeAgreement(state, now);
+      expect(renamed.agreement.document).toEqual({
+        version: PERSONAL_AGREEMENT_VERSION,
+        markdown: PERSONAL_AGREEMENT_MARKDOWN,
+      });
+      expect(renamed.agreement.ack).toEqual({ dom: stamp, sub: stamp });
+      expect(renamed.agreement.excluded).toEqual(["Our own limit"]);
+    },
+  );
   it("migrates existing data once and archives the previous terms and acknowledgements", () => {
     const old = legacy();
     old.messages = [{ id: "note", by: "sub", at: stamp, text: "Keep this note" }];
