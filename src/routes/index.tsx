@@ -317,7 +317,7 @@ function Onboarding() {
             </form>
           </>
         )}
-        {mode !== "demo" && !s.onboarded && (
+        {mode !== "demo" && !s.onboarded && me.status !== "signedIn" && (
           <button
             className="mt-6 text-sm text-muted-foreground underline"
             onClick={() => {

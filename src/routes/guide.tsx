@@ -88,8 +88,14 @@ function GuidePage() {
               days.
             </li>
             <li>
-              When your Sub joins, open their card. Both of you read and acknowledge the{" "}
-              <strong>Agreement and limits</strong> before anything starts.
+              Open your Sub's card and go to <strong>Agreement and limits</strong>. Write your
+              agreement in your own words. New to this? Choose{" "}
+              <strong>Start from a short template</strong> and make it yours. With a second Sub, you
+              can copy your first agreement and change it for them. Each Sub has their own.
+            </li>
+            <li>
+              Your Sub reads it and can suggest changes. Nothing starts until you both acknowledge
+              it, and any change asks you both again.
             </li>
             <li>
               Go to <strong>Routines and tasks → New routine</strong>. Set a title, short
@@ -115,7 +121,11 @@ function GuidePage() {
         <Section id="sub" title="3. If you're the Sub">
           <Steps>
             <li>Open your Master's invite link, create your account and accept.</li>
-            <li>Read the agreement and acknowledge it. Nothing starts until you both have.</li>
+            <li>
+              Read the agreement your Master wrote and acknowledge it. Want something changed? Use{" "}
+              <strong>Propose an addition</strong> on the agreement page. Nothing starts until you
+              both have acknowledged.
+            </li>
             <li>
               <strong>Today</strong> shows your tasks. Where asked, opt in or acknowledge first,
               then send your check-in within the time window.

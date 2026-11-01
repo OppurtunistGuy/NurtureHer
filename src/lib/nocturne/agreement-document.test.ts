@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   AGREEMENT_MARKDOWN,
-  AGREEMENT_VERSION,
+  CUSTOM_AGREEMENT_VERSION,
   PERSONAL_AGREEMENT_MARKDOWN,
   PERSONAL_AGREEMENT_VERSION,
   upgradeAgreement,
 } from "./agreement-document";
+import { sampleRoutines } from "@/test/sample-routines";
 import { createInitialState } from "./store";
 import { readStoredState } from "./storage";
 import { transition } from "./engine";
@@ -52,21 +53,27 @@ describe("supplied Master & Sub Agreement", () => {
       expect(next.routines).toEqual(state.routines);
     },
   );
-  it("starts new spaces with the neutral template: no one's personal limits", () => {
+  it("starts new spaces with an empty agreement for the Master to write", () => {
     const s = createInitialState();
-    expect(s.agreement.document).toEqual({
-      version: AGREEMENT_VERSION,
-      markdown: AGREEMENT_MARKDOWN,
-    });
-    expect(AGREEMENT_MARKDOWN.match(/^### [1-7]\. /gm)).toHaveLength(7);
-    expect(AGREEMENT_MARKDOWN).not.toContain("December 16");
-    expect(AGREEMENT_MARKDOWN).not.toContain("exams");
-    expect(AGREEMENT_MARKDOWN).toContain("not a waiver of either person's right to stop");
+    expect(s.agreement.document).toEqual({ version: CUSTOM_AGREEMENT_VERSION, markdown: "" });
+    expect(s.agreement.boundaries).toEqual([]);
     expect(s.agreement.excluded).toEqual([]);
-    expect(s.agreement.commWindows).toBe("To be agreed together.");
+    expect(s.agreement.commWindows).toBe("");
     expect(s.agreement.safeword).toBe("RED");
     expect(s.agreement.checkInSignal).toBe("YELLOW");
     expect(s.agreement.ack).toEqual({ dom: null, sub: null });
+    expect(s.routines).toEqual([]);
+    // The optional template stays neutral.
+    expect(AGREEMENT_MARKDOWN).not.toContain("December 16");
+    expect(AGREEMENT_MARKDOWN.match(/^### [1-7]\. /gm)).toHaveLength(7);
+  });
+  it("never replaces an agreement a couple already has, whatever its version", () => {
+    for (const version of ["boundsome-template-2026-11-01-v1", CUSTOM_AGREEMENT_VERSION, "x"]) {
+      const s = createInitialState();
+      s.agreement.document = { version, markdown: "### Our rules\n\n- Be honest" };
+      s.agreement.ack = { dom: stamp, sub: stamp };
+      expect(upgradeAgreement(s, now)).toBe(s);
+    }
   });
   it.each([false, true])(
     "keeps an existing space's personal agreement and acknowledgements untouched (paused=%s)",
@@ -132,7 +139,7 @@ describe("supplied Master & Sub Agreement", () => {
     s = transition(s, { type: "resume" }, ctx);
     s = upgradeAgreement(s, now);
     expect(s.pause.active).toBe(false);
-    expect(s.agreement.document?.version).toBe(AGREEMENT_VERSION);
+    expect(s.agreement.document).toEqual({ version: CUSTOM_AGREEMENT_VERSION, markdown: "" });
     expect(s.agreement.ack).toEqual({ dom: null, sub: null });
   });
   for (const signal of ["RED", "YELLOW"] as const)
@@ -146,25 +153,67 @@ describe("supplied Master & Sub Agreement", () => {
         expect(locked.pause.active).toBe(true);
         expect(locked.pause.signal).toBe(signal);
         expect(() =>
-          transition(locked, { type: "routine.save", routine: s.routines[0]! }, ctx),
+          transition(locked, { type: "routine.save", routine: sampleRoutines()[0]! }, ctx),
         ).toThrow(/Paused/);
       }
     });
-  it("keeps the supplied wording intact while recording negotiated additions separately", () => {
-    const s = createInitialState();
+  it("lets only the Master write the agreement, archives old wording and asks both again", () => {
+    let s = createInitialState();
     s.onboarded = true;
-    const ctx = { now, id: () => "proposal", random: () => 1 };
-    let next = transition(
+    let i = 0;
+    const ctx = { now, id: () => `${++i}`, random: () => 1 };
+    expect(() => transition(s, { type: "agreement.write", markdown: "   " }, ctx)).toThrow(
+      /Write the agreement/,
+    );
+    s = transition(s, { type: "agreement.write", markdown: "### Our rules\n\n- Be honest" }, ctx);
+    expect(s.agreement.document).toEqual({
+      version: CUSTOM_AGREEMENT_VERSION,
+      markdown: "### Our rules\n\n- Be honest",
+    });
+    expect(s.agreement.history ?? []).toHaveLength(0);
+    s = transition(s, { type: "agreement.ack" }, ctx);
+    s = transition(s, { type: "view", role: "sub" }, ctx);
+    s = transition(s, { type: "agreement.ack" }, ctx);
+    expect(() =>
+      transition(s, { type: "agreement.write", markdown: "Sub rewrites it" }, ctx),
+    ).toThrow(/Only the Master/);
+    s = transition(s, { type: "view", role: "dom" }, ctx);
+    s = transition(s, { type: "agreement.write", markdown: "### Our rules\n\n- Be kind" }, ctx);
+    expect(s.agreement.ack).toEqual({ dom: null, sub: null });
+    expect(s.agreement.history?.[0]?.document?.markdown).toBe("### Our rules\n\n- Be honest");
+    expect(s.agreement.history?.[0]?.ack.sub).toBeTruthy();
+    // Locked while paused, like every other change.
+    const paused = transition(s, { type: "pause", reason: "" }, ctx);
+    expect(() => transition(paused, { type: "agreement.write", markdown: "X" }, ctx)).toThrow(
+      /Paused/,
+    );
+  });
+  it("adds an accepted change to the text and keeps list additions in their lists", () => {
+    let s = createInitialState();
+    s.onboarded = true;
+    let i = 0;
+    const ctx = { now, id: () => `p${++i}`, random: () => 1 };
+    s = transition(s, { type: "agreement.write", markdown: "### Our rules\n\n- Be honest" }, ctx);
+    s = transition(s, { type: "view", role: "sub" }, ctx);
+    s = transition(
+      s,
+      { type: "agreement.propose", section: "Agreement text", text: "A call every Sunday" },
+      ctx,
+    );
+    s = transition(
       s,
       { type: "agreement.propose", section: "Boundaries", text: "Extra check-in after a session" },
       ctx,
     );
-    next = transition(next, { type: "view", role: "sub" }, ctx);
-    next = transition(next, { type: "agreement.resolve", id: "proposal", accept: true }, ctx);
-    expect(next.agreement.boundaries).toContain("Extra check-in after a session");
-    expect(next.agreement.document?.markdown).toBe(AGREEMENT_MARKDOWN);
+    s = transition(s, { type: "view", role: "dom" }, ctx);
+    for (const p of s.agreement.proposals)
+      s = transition(s, { type: "agreement.resolve", id: p.id, accept: true }, ctx);
+    expect(s.agreement.document?.markdown).toBe(
+      "### Our rules\n\n- Be honest\n\n### Agreed additions\n\n- A call every Sunday",
+    );
+    expect(s.agreement.boundaries).toContain("Extra check-in after a session");
     expect(() =>
-      transition(next, { type: "agreement.propose", section: "Safeword", text: "Ignore RED" }, ctx),
+      transition(s, { type: "agreement.propose", section: "Safeword", text: "Ignore RED" }, ctx),
     ).toThrow(/valid agreement section/);
   });
 });
