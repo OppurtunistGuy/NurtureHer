@@ -4,6 +4,7 @@ import { createInitialState } from "./store";
 import { dateKey, effectiveStatus, taskKey } from "./logic";
 import { readStoredState } from "./storage";
 import type { AppState, Goal } from "./types";
+import { sampleRoutines } from "@/test/sample-routines";
 
 const now = new Date(2026, 9, 23, 10, 0),
   date = dateKey(now);
@@ -16,6 +17,7 @@ function fixture(role: "dom" | "sub" = "dom"): AppState {
     onboarded: true,
     viewRole: role,
     myRole: role,
+    routines: sampleRoutines(),
     agreement: { ...s.agreement, ack: { dom: now.toISOString(), sub: now.toISOString() } },
   };
 }

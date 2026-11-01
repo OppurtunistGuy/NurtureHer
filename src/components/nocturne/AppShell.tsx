@@ -249,8 +249,7 @@ export function AppShell({
                     ? "Connection unavailable"
                     : s.space.paired
                       ? "Connected"
-                      : "Waiting for your partner"}{" "}
-                · use example data while testing
+                      : "Waiting for your partner"}
               </>
             ) : (
               <>

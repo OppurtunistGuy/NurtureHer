@@ -81,11 +81,22 @@ describe("rendered app workflow", () => {
     await click(screen.getByRole("button", { name: "Enter solo demo" }));
     await screen.findByRole("heading", { name: "Good day, Maya" });
 
+    // A new space has no routines and no agreement: the Master writes it.
+    await go("/routines");
+    expect(screen.queryByText("Wake-up check-in")).toBeNull();
     await go("/agreements");
-    expect(screen.getByRole("heading", { name: "Master & Sub Agreement" })).toBeInTheDocument();
-    expect(screen.getByText("4. Rewards & consequences")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Waiting for the agreement/ })).toBeDisabled();
+    await click(screen.getByRole("button", { name: "Start from a short template" }));
+    await click(screen.getByRole("button", { name: "Save agreement" }));
+    expect(await screen.findByText("4. Rewards & consequences")).toBeInTheDocument();
     expect(screen.getByText("7. Review")).toBeInTheDocument();
     await click(screen.getByRole("button", { name: "I acknowledge this agreement" }));
+    await go("/routines");
+    await click(screen.getByRole("button", { name: "New routine" }));
+    fill("Title", "Wake-up check-in");
+    fill("Instructions", "A short good-morning note when you're up.");
+    await click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByText("A short good-morning note when you're up.");
     await go("/settings");
     await click(screen.getByRole("radio", { name: /Sub/ }));
     await go("/agreements");

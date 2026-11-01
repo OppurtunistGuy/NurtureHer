@@ -10,6 +10,17 @@ if (typeof window !== "undefined") {
     value: () => {},
   });
 
+  // jsdom has no ResizeObserver; Radix switches measure themselves with it.
+  if (!("ResizeObserver" in window))
+    Object.defineProperty(window, "ResizeObserver", {
+      writable: true,
+      value: class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    });
+
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     value: (query: string) => ({

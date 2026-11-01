@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInitialState } from "./initial-state";
 import type { SpaceSnapshot } from "./space-protocol";
+import { sampleRoutines } from "@/test/sample-routines";
 
 beforeEach(() => {
   localStorage.clear();
@@ -98,7 +99,7 @@ describe("persistent demo boundary", () => {
       resumeAck: { dom: false, sub: false },
     };
     localStorage.setItem("nocturne.demo.v1", JSON.stringify(state));
-    expect(actions.saveRoutine(createInitialState().routines[0]!).ok).toBe(false);
+    expect(actions.saveRoutine(sampleRoutines()[0]!).ok).toBe(false);
     expect(JSON.parse(localStorage.getItem("nocturne.demo.v1")!).pause.active).toBe(true);
   });
   it("keeps preview-role switches and pending challenges out of persistent storage", async () => {

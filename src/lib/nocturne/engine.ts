@@ -1,3 +1,4 @@
+import { AGREEMENT_MAX_LENGTH, CUSTOM_AGREEMENT_VERSION } from "./agreement-document";
 import { dateKey, minutesOf, occursOn, taskKey } from "./logic";
 import type { AppState, Goal, PartnerRequest, Role, Routine, Submission } from "./types";
 import { rollDice } from "./games/dice";
@@ -50,6 +51,7 @@ export type Command =
     }
   | { type: "resume" }
   | { type: "agreement.ack" }
+  | { type: "agreement.write"; markdown: string }
   | { type: "agreement.propose"; section: string; text: string }
   | { type: "agreement.resolve"; id: string; accept: boolean }
   | { type: "prefs"; patch: Partial<AppState["prefs"]> }
@@ -75,6 +77,7 @@ export interface Context {
 // A game can always be stopped, even while paused: safety first.
 const duringPause: Command["type"][] = ["view", "message", "resume", "game.stop", "game.red"];
 const commander: Command["type"][] = [
+  "agreement.write",
   "points.award",
   "points.adjust",
   "points.levels",
@@ -736,10 +739,52 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
         },
         "Acknowledged the current agreement.",
       );
+    case "agreement.write": {
+      const markdown = cmd.markdown.trim();
+      requireThat(markdown.length > 0, "Write the agreement before saving it.");
+      requireThat(markdown.length <= AGREEMENT_MAX_LENGTH, "The agreement is too long.");
+      const old = s.agreement;
+      if (old.document?.markdown === markdown) return s;
+      // The previous wording, with its acknowledgements, stays readable under Previous agreements.
+      const history = old.document?.markdown.trim()
+        ? [
+            {
+              version: old.document.version,
+              archivedAt: at,
+              document: old.document,
+              boundaries: old.boundaries,
+              excluded: old.excluded,
+              commWindows: old.commWindows,
+              safeword: old.safeword,
+              emergencyContact: old.emergencyContact,
+              lastReview: old.lastReview,
+              ack: old.ack,
+              proposals: [],
+            },
+            ...(old.history ?? []),
+          ].slice(0, 20)
+        : (old.history ?? []);
+      return log(
+        {
+          ...s,
+          challenge: undefined,
+          agreement: {
+            ...old,
+            document: { version: CUSTOM_AGREEMENT_VERSION, markdown },
+            history,
+            ack: { dom: null, sub: null },
+            lastReview: today,
+          },
+        },
+        `${old.document?.markdown.trim() ? "Updated" : "Wrote"} the agreement. Both must acknowledge it.`,
+      );
+    }
     case "agreement.propose": {
       nonempty(cmd.text, 300);
       requireThat(
-        ["Boundaries", "Excluded activities", "Communication windows"].includes(cmd.section),
+        ["Agreement text", "Boundaries", "Excluded activities", "Communication windows"].includes(
+          cmd.section,
+        ),
         "Choose a valid agreement section.",
       );
       return log(
@@ -774,6 +819,15 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
         if (p.section === "Boundaries") a.boundaries = [...a.boundaries, p.text];
         if (p.section === "Excluded activities") a.excluded = [...a.excluded, p.text];
         if (p.section === "Communication windows") a.commWindows = p.text;
+        if (p.section === "Agreement text") {
+          // An accepted change to the wording is added to the text, under its own heading.
+          const markdown = a.document?.markdown.trim() ?? "";
+          const heading = "### Agreed additions";
+          const next = markdown.includes(heading)
+            ? `${markdown}\n- ${p.text}`
+            : `${markdown}${markdown ? "\n\n" : ""}${heading}\n\n- ${p.text}`;
+          a.document = { version: a.document?.version ?? CUSTOM_AGREEMENT_VERSION, markdown: next };
+        }
         a.ack = { dom: null, sub: null };
       }
       return log(

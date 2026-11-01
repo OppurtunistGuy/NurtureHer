@@ -107,7 +107,11 @@ Rules, discipline, and consequences are intended to build consistency, trust, an
 
 This agreement is a shared understanding of the dynamic, not a waiver of either person's right to stop or withdraw consent.`;
 
-/** The neutral starting agreement for every new space. Each couple adds their own limits. */
+/** An agreement the Master wrote (or copied, or started from the template) in the app. */
+export const CUSTOM_AGREEMENT_VERSION = "custom";
+export const AGREEMENT_MAX_LENGTH = 20000;
+
+/** An optional short starting point for beginners. Never installed unless the Master picks it. */
 export const AGREEMENT_VERSION = "boundsome-template-2026-11-01-v1";
 export const AGREEMENT_MARKDOWN = `# BoundSome
 
@@ -162,17 +166,13 @@ This agreement is a shared understanding between us, not a waiver of either pers
 
 export function createAgreement(today: string): Agreement {
   return {
-    document: { version: AGREEMENT_VERSION, markdown: AGREEMENT_MARKDOWN },
+    // Empty until the Master writes it: the app doesn't decide anyone's dynamic.
+    document: { version: CUSTOM_AGREEMENT_VERSION, markdown: "" },
     history: [],
-    boundaries: [
-      "Safety concerns, hard limits, and withdrawal of consent take immediate priority.",
-      "New activities and physical consequences require separate discussion and agreement.",
-      "No consequence is automatic simply because a task was missed.",
-      "Intimate photos and videos must not be compulsory proof; an alternative must be available.",
-    ],
-    // Each couple writes their own hard limits; none are assumed.
+    // Each couple writes their own boundaries and hard limits; none are assumed.
+    boundaries: [],
     excluded: [],
-    commWindows: "To be agreed together.",
+    commWindows: "",
     safeword: "RED",
     checkInSignal: "YELLOW",
     emergencyContact: "For urgent safety needs, stop and communicate outside the app.",
@@ -186,9 +186,9 @@ export function createAgreement(today: string): Agreement {
  * resume before any agreement change; the pending update is applied afterward. */
 export function upgradeAgreement(state: AppState, now: Date): AppState {
   const document = state.agreement.document;
-  // A space that already has the founders' own agreement keeps it, signatures included.
+  // A couple's agreement is theirs: the app never replaces it, whatever its version.
   // Only the legacy product heading is renamed, which is not a change to agreed terms.
-  if (document?.version === PERSONAL_AGREEMENT_VERSION) {
+  if (document) {
     const renamed = document.markdown.replace(/^# NOCTURNE TOGETHER(?=\r?\n)/, "# BoundSome");
     return renamed === document.markdown
       ? state
@@ -197,27 +197,8 @@ export function upgradeAgreement(state: AppState, now: Date): AppState {
           agreement: { ...state.agreement, document: { ...document, markdown: renamed } },
         };
   }
-  // A product-name change is not a change to agreed terms. Preserve signatures,
-  // proposals, history and pause state when only the legacy heading differs.
-  if (
-    document?.version === AGREEMENT_VERSION &&
-    document.markdown.replace(/^# NOCTURNE TOGETHER(?=\r?\n)/, "# BoundSome") === AGREEMENT_MARKDOWN
-  ) {
-    return document.markdown === AGREEMENT_MARKDOWN
-      ? state
-      : {
-          ...state,
-          agreement: {
-            ...state.agreement,
-            document: { ...document, markdown: AGREEMENT_MARKDOWN },
-          },
-        };
-  }
-  if (
-    state.agreement.document?.version === AGREEMENT_VERSION &&
-    state.agreement.document.markdown === AGREEMENT_MARKDOWN
-  )
-    return state;
+  // Very old spaces without an agreement document: archive their terms and start an empty
+  // agreement for the Master to write.
   if (state.pause.active) return { ...state, agreementUpdatePending: true };
   const old = state.agreement;
   const current = createAgreement(dateKey(now, state.space.timeZone));
@@ -244,7 +225,7 @@ export function upgradeAgreement(state: AppState, now: Date): AppState {
         id: `agreement-${AGREEMENT_VERSION}`,
         at: now.toISOString(),
         by: "system" as const,
-        text: "Installed the BoundSome agreement template. Previous terms archived; both must acknowledge the new agreement.",
+        text: "Started a new agreement for the Master to write. Previous terms archived; both acknowledge it once it is written.",
       },
       ...state.activity,
     ].slice(0, 300),
