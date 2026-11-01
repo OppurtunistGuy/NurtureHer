@@ -155,14 +155,16 @@ try {
   await guest.goto(`${origin}/routines`);
   await guest.getByText("Browser test routine", { exact: true }).waitFor();
   assert.equal(await guest.getByRole("button", { name: "New routine", exact: true }).count(), 0);
-  // New spaces have no agreement: the Master writes one before anyone can acknowledge.
+  // New spaces start with the standard agreement; the Master edits it and shares it.
   await guest.goto(`${origin}/agreements`);
-  await guest.getByText("hasn't written your agreement yet", { exact: false }).waitFor();
+  await guest.getByText("4. Rewards & consequences", { exact: true }).waitFor();
+  assert.equal(await guest.getByRole("button", { name: "Edit agreement", exact: true }).count(), 0);
   await owner.goto(`${origin}/agreements`);
+  await owner.getByRole("button", { name: "Edit agreement", exact: true }).click();
   await owner
     .getByLabel("Write your agreement", { exact: true })
     .fill("### Our rules\n\n- Browser test rule");
-  await owner.getByRole("button", { name: "Save agreement", exact: true }).click();
+  await owner.getByRole("button", { name: /^Save and share with / }).click();
   await owner.getByText("Browser test rule", { exact: true }).first().waitFor();
   for (const page of [owner, guest]) {
     await page.goto(`${origin}/agreements`);
