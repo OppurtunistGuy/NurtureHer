@@ -1,4 +1,4 @@
-import type { CardCategory, Heat } from "./games/types";
+import type { CardCategory, Heat, ListAnswer, Pace } from "./games/types";
 import { useSyncExternalStore } from "react";
 import { toast } from "sonner";
 import { dateKey, randomInviteCode, uid } from "./logic";
@@ -178,11 +178,22 @@ function makeActions<T>(dispatch: (command: Command) => T) {
     sendMessage: (text: string, channel: "notes" | "discussion" = "notes", routineId?: string) =>
       dispatch({ type: "message", text, channel, routineId }),
     setPrefs: (patch: Partial<AppState["prefs"]>) => dispatch({ type: "prefs", patch }),
-    startGame: (game: "dice" | "wheel", heat: Heat, masterOnlyRoll: boolean) =>
-      dispatch({ type: "game.start", game, heat, masterOnlyRoll }),
+    startGame: (
+      game: "dice" | "wheel" | "snakes" | "hand",
+      heat: Heat,
+      masterOnlyRoll: boolean,
+      box = false,
+      night?: { length: number; handSize: number },
+    ) => dispatch({ type: "game.start", game, heat, masterOnlyRoll, box, ...(night ?? {}) }),
+    playCard: (cardId: string) => dispatch({ type: "game.play", cardId }),
+    counterCard: () => dispatch({ type: "game.counter" }),
+    checkIn: (pace: Pace) => dispatch({ type: "game.checkin", pace }),
+    saveList: (answers: Record<string, ListAnswer>) => dispatch({ type: "game.list", answers }),
+    moveToken: () => dispatch({ type: "game.move" }),
+    openBox: () => dispatch({ type: "game.box" }),
     spinWheel: () => dispatch({ type: "game.spin" }),
     pickCategory: (category: CardCategory) => dispatch({ type: "game.pick", category }),
-    joinGame: () => dispatch({ type: "game.join" }),
+    joinGame: (box = false) => dispatch({ type: "game.join", box }),
     rollDice: () => dispatch({ type: "game.roll" }),
     finishCard: () => dispatch({ type: "game.done" }),
     skipCard: () => dispatch({ type: "game.skip" }),
