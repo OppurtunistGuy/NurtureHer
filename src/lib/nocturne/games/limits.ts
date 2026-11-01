@@ -45,13 +45,21 @@ export function cardRespectsLimits(card: GameCard, hardLimits: string[]): boolea
   return !terms.some((term) => (term.includes(" ") ? haystack.includes(term) : words.has(term)));
 }
 
-/** Pull the hard limits out of the saved agreement: the excluded list plus the document line. */
+/**
+ * Pull the hard limits out of the agreement: the excluded list plus any "**Hard limits:**" line,
+ * from the current agreement and every archived one. A limit written once keeps protecting the
+ * couple in games even after the agreement text is replaced. When in doubt, block.
+ */
 export function hardLimitsFromState(state: Pick<AppState, "agreement">): string[] {
-  const out = [...(state.agreement.excluded ?? [])];
-  const markdown = state.agreement.document?.markdown ?? "";
-  for (const line of markdown.split("\n")) {
-    const match = /\*\*hard limits:\*\*\s*(.+)$/i.exec(line.trim());
-    if (match?.[1]) out.push(match[1].replace(/\.$/, ""));
+  const out: string[] = [];
+  const versions = [state.agreement, ...(state.agreement.history ?? [])];
+  for (const version of versions) {
+    out.push(...(version.excluded ?? []));
+    const markdown = version.document?.markdown ?? "";
+    for (const line of markdown.split("\n")) {
+      const match = /\*\*hard limits:\*\*\s*(.+)$/i.exec(line.trim());
+      if (match?.[1]) out.push(match[1].replace(/\.$/, ""));
+    }
   }
   return [...new Set(out.map((item) => item.trim()).filter(Boolean))];
 }
