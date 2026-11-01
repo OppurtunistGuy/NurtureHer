@@ -7,6 +7,9 @@ export type AccountState = {
   status: "checking" | "signedOut" | "signedIn" | "offline";
   account: Account | null;
   legacySpaces: number;
+  /** Only the owner sees the page for access links and feedback. The server checks too. */
+  owner?: boolean;
+  features?: { ai: boolean; inviteOnly: boolean };
 };
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -46,6 +49,11 @@ export function loadAccount() {
         status: data.account ? "signedIn" : "signedOut",
         account: data.account,
         legacySpaces: data.legacySpaces ?? 0,
+        owner: !!data.owner,
+        features: {
+          ai: !!data.features?.ai,
+          inviteOnly: data.features?.inviteOnly !== false,
+        },
       });
     } catch {
       set({ ...current, status: "offline" });
@@ -74,7 +82,9 @@ async function signIn(body: Record<string, unknown>): Promise<Result> {
   try {
     const { response, data } = await post(body);
     if (!response.ok) return { ok: false, error: data.error ?? "Could not sign in. Please retry." };
-    set({ status: "signedIn", account: data.account, legacySpaces: 0 });
+    set({ ...current, status: "signedIn", account: data.account, legacySpaces: 0 });
+    // Owner flag and features come from the server; refresh them for the new account.
+    void loadAccount();
     await restoreSharedSpace();
     return { ok: true };
   } catch {
@@ -83,8 +93,38 @@ async function signIn(body: Record<string, unknown>): Promise<Result> {
 }
 
 export const accountActions = {
-  register: (name: string, email: string, password: string) =>
-    signIn({ op: "auth.register", name, email, password, adult: true }),
+  register: (
+    name: string,
+    email: string,
+    password: string,
+    entry: { access?: string | undefined; invite?: string | undefined } = {},
+  ) =>
+    signIn({
+      op: "auth.register",
+      name,
+      email,
+      password,
+      adult: true,
+      ...(entry.access ? { access: entry.access } : {}),
+      ...(entry.invite ? { invite: entry.invite } : {}),
+    }),
+  async checkAccess(code: string): Promise<{ status: string; error?: string }> {
+    try {
+      const { data } = await post({ op: "access.check", code });
+      return { status: data.status ?? "unknown", error: data.error };
+    } catch {
+      return { status: "offline", error: "Cannot reach BoundSome. Check your connection." };
+    }
+  },
+  async sendFeedback(text: string, page: string): Promise<Result> {
+    try {
+      const { response, data } = await post({ op: "feedback.send", text, page });
+      if (!response.ok) return { ok: false, error: data.error ?? "Could not send feedback." };
+      return { ok: true };
+    } catch {
+      return { ok: false, error: "Cannot reach BoundSome. Check your connection and retry." };
+    }
+  },
   login: (email: string, password: string) => signIn({ op: "auth.login", email, password }),
   async logout(): Promise<Result> {
     try {
@@ -94,7 +134,7 @@ export const accountActions = {
       return { ok: false, error: "Cannot reach BoundSome, so you are still signed in. Retry." };
     }
     leaveSharedSession();
-    set({ status: "signedOut", account: null, legacySpaces: 0 });
+    set({ ...current, status: "signedOut", account: null, legacySpaces: 0, owner: false });
     return { ok: true };
   },
   async forgot(email: string): Promise<Result & { message?: string }> {
@@ -111,7 +151,7 @@ export const accountActions = {
     try {
       const { response, data } = await post({ op: "auth.reset", token, password });
       if (!response.ok) return { ok: false, error: data.error ?? "Could not reset your password." };
-      set({ status: "signedOut", account: null, legacySpaces: 0 });
+      set({ ...current, status: "signedOut", account: null, legacySpaces: 0, owner: false });
       return { ok: true };
     } catch {
       return { ok: false, error: "Cannot reach BoundSome. Check your connection and retry." };

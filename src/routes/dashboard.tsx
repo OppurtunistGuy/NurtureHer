@@ -145,6 +145,7 @@ function Dashboard() {
             <div className="ornament my-6 text-[0.6rem]" aria-hidden>
               ◆
             </div>
+            <WelcomeCard userId={me.account?.id ?? ""} />
             {error && (
               <div role="alert" className="mb-6 rounded-md border p-4 text-sm">
                 <p>{error}</p>
@@ -409,5 +410,46 @@ function Stat({
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className={highlight ? "text-gold" : ""}>{value}</dd>
     </div>
+  );
+}
+
+/** Shown once per account on this browser: points new testers to the guide and feedback. */
+function WelcomeCard({ userId }: { userId: string }) {
+  const key = `boundsome_welcome_${userId}`;
+  const [hidden, setHidden] = useState(true);
+  useEffect(() => {
+    try {
+      setHidden(!userId || localStorage.getItem(key) === "seen");
+    } catch {
+      setHidden(false);
+    }
+  }, [key, userId]);
+  if (hidden) return null;
+  const dismiss = () => {
+    try {
+      localStorage.setItem(key, "seen");
+    } catch {
+      // Storage can be blocked; the card simply shows again next time.
+    }
+    setHidden(true);
+  };
+  return (
+    <section aria-labelledby="welcome-heading" className="surface mb-6 space-y-3 p-5">
+      <h2 id="welcome-heading" className="text-xl text-ivory">
+        Welcome to BoundSome
+      </h2>
+      <p className="text-sm leading-6 text-muted-foreground">
+        You're one of the first people in. The three-minute guide shows how to invite your Sub, set
+        routines and use the Telegram check. Tell us what you think any time from the menu.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button asChild size="sm">
+          <Link to="/guide">Read the guide</Link>
+        </Button>
+        <Button size="sm" variant="outline" onClick={dismiss}>
+          Got it
+        </Button>
+      </div>
+    </section>
   );
 }

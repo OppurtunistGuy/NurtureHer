@@ -1,7 +1,8 @@
 // Remote persistence uses the same domain transitions and schemas as the local repository.
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createInitialState } from "./initial-state";
-import { commandSchema, bodySchema, SpaceError, SESSION_SECONDS } from "./space-repository.server";
+import { parseCommand, bodySchema, SpaceError, SESSION_SECONDS } from "./space-repository.server";
+import { gamesEnabled } from "./games/flag";
 import { transition, type Command } from "./engine";
 import { createAgreement, upgradeAgreement } from "./agreement-document";
 import { dateKey } from "./logic";
@@ -74,6 +75,7 @@ export class RemoteRepositoryCore {
   private async snapshot(row: Row, role: Role, session: string): Promise<SpaceSnapshot> {
     const current = this.state(row);
     return {
+      features: { games: gamesEnabled(process.env) },
       telegram: {
         configured: telegramConfigured(),
         proofs: await this.verification().list(
@@ -298,8 +300,7 @@ export class RemoteRepositoryCore {
         row = await this.row(member.space_id),
         state = this.state(row);
       const snapshot = await this.snapshot(row, member.role, session);
-      const command =
-        "command" in operation ? (commandSchema.parse(operation.command) as Command) : null;
+      const command = "command" in operation ? parseCommand(operation.command) : null;
       // A safety stop always wins even if this browser has an old revision.
       if (revision !== row.revision && command?.type !== "pause")
         throw new SpaceError(

@@ -19,6 +19,8 @@ import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
 import { pointsAwardSchema, pointsLevelsSchema } from "./points";
+import { gameCommandSchemas } from "./games/schema";
+import { gamesEnabled } from "./games/flag";
 import { createInitialState } from "./initial-state";
 import { savedStateSchema } from "./storage";
 import { transition, type Command } from "./engine";
@@ -121,7 +123,17 @@ export const commandSchema = z.discriminatedUnion("type", [
     .strict(),
   z.object({ type: z.literal("agreement.resolve"), id, accept: z.boolean() }).strict(),
   z.object({ type: z.literal("prefs"), patch: savedStateSchema.shape.prefs.partial() }).strict(),
+  ...gameCommandSchemas,
 ]);
+
+/** Parse a client command. Game commands are refused outright while Games is switched off. */
+export function parseCommand(raw: unknown): Command {
+  const command = commandSchema.parse(raw) as Command;
+  if (command.type.startsWith("game.") && !gamesEnabled(process.env)) {
+    throw new SpaceError(404, "Games isn't available.");
+  }
+  return command;
+}
 export const bodySchema = savedStateSchema.extend({
   challenge: z
     .object({
@@ -265,6 +277,7 @@ export class SpaceRepository {
   private snapshot(row: Row, role: Role, session: string): SpaceSnapshot {
     const current = this.state(row);
     return {
+      features: { games: gamesEnabled(process.env) },
       telegram: {
         configured: telegramConfigured(),
         proofs: this.telegram.list(row.id, this.now(), dayOf(this.now(), current.space.timeZone)),
@@ -471,8 +484,7 @@ export class SpaceRepository {
         row = this.row(member.space_id),
         state = this.state(row);
       const snapshot = this.snapshot(row, member.role, session);
-      const command =
-        "command" in operation ? (commandSchema.parse(operation.command) as Command) : null;
+      const command = "command" in operation ? parseCommand(operation.command) : null;
       // A safety stop always wins even if this browser has an old revision.
       if (revision !== row.revision && command?.type !== "pause")
         throw new SpaceError(

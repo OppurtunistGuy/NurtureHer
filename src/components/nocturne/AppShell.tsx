@@ -19,6 +19,7 @@ import {
   useSpaceConnection,
   restoreSharedSpace,
   spaceActions,
+  useGamesEnabled,
 } from "@/lib/nocturne/store";
 import { PauseBanner, PauseButton } from "./PauseControl";
 import { useReminders } from "./useReminders";
@@ -69,6 +70,15 @@ export function AccountMenu() {
         <DropdownMenuItem onSelect={() => void navigate({ to: "/dashboard" })}>
           Dashboard
         </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void navigate({ to: "/guide" })}>Guide</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void navigate({ to: "/guide", hash: "feedback" })}>
+          Send feedback
+        </DropdownMenuItem>
+        {me.owner && (
+          <DropdownMenuItem onSelect={() => void navigate({ to: "/owner" })}>
+            Owner: invites &amp; feedback
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={async () => {
@@ -96,6 +106,7 @@ const NAV = [
   { to: "/agreements", label: "Agreement", icon: BookOpen },
   { to: "/activity", label: "Activity", icon: History },
 ] as const;
+const GAMES_NAV = { to: "/games", label: "Games" } as const;
 const MOBILE = [NAV[0], NAV[1], NAV[4], NAV[5]] as const;
 
 export function AppShell({
@@ -117,6 +128,8 @@ export function AppShell({
     profile = useProfile(),
     { pathname } = useLocation();
   useReminders();
+  const gamesOn = useGamesEnabled(),
+    navItems = gamesOn ? [...NAV, GAMES_NAV] : [...NAV];
   if (!s.onboarded)
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 px-6 text-center">
@@ -214,7 +227,7 @@ export function AppShell({
         >
           {profile && <ProfileSections profile={profile} />}
           {!profile &&
-            NAV.map((n) => (
+            navItems.map((n) => (
               <Link
                 key={n.to}
                 to={n.to}
@@ -340,13 +353,15 @@ export function AppShell({
                     <SheetTitle>Explore your space</SheetTitle>
                   </SheetHeader>
                   <nav className="mt-5 grid grid-cols-2 gap-2" aria-label="More pages">
-                    {NAV.filter((n) => !MOBILE.some((m) => m.to === n.to)).map((n) => (
-                      <SheetClose asChild key={n.to}>
-                        <Link to={n.to} className="rounded-md border px-4 py-3 text-sm">
-                          {n.label}
-                        </Link>
-                      </SheetClose>
-                    ))}
+                    {navItems
+                      .filter((n) => !MOBILE.some((m) => m.to === n.to))
+                      .map((n) => (
+                        <SheetClose asChild key={n.to}>
+                          <Link to={n.to} className="rounded-md border px-4 py-3 text-sm">
+                            {n.label}
+                          </Link>
+                        </SheetClose>
+                      ))}
                     <SheetClose asChild>
                       <Link to="/settings" className="rounded-md border px-4 py-3 text-sm">
                         {s.space.mode === "demo" ? "Settings & demo roles" : "Settings"}
@@ -409,10 +424,17 @@ function ProfileBar({ profile }: { profile: Profile }) {
   );
 }
 
+/** AI drafting is hidden until the server has an AI key, so nobody meets a broken button. */
+function useVisibleSections() {
+  const me = useAccount();
+  return SECTIONS.filter((section) => section.id !== "drafting" || !!me.features?.ai);
+}
+
 function ProfileSections({ profile }: { profile: Profile }) {
+  const sections = useVisibleSections();
   return (
     <>
-      {SECTIONS.map((section) => (
+      {sections.map((section) => (
         <Link
           key={section.id}
           to="/subs/$spaceId/$section"
@@ -429,6 +451,7 @@ function ProfileSections({ profile }: { profile: Profile }) {
 
 const MOBILE_SECTIONS = ["overview", "routines", "submissions", "points"] as const;
 function ProfileMobileNav({ profile }: { profile: Profile }) {
+  const sections = useVisibleSections();
   const short: Record<string, string> = {
     overview: "Overview",
     routines: "Routines",
@@ -474,19 +497,19 @@ function ProfileMobileNav({ profile }: { profile: Profile }) {
               <SheetTitle>{profile.subName}</SheetTitle>
             </SheetHeader>
             <nav className="mt-5 grid grid-cols-2 gap-2" aria-label="More sections">
-              {SECTIONS.filter(
-                (section) => !(MOBILE_SECTIONS as readonly string[]).includes(section.id),
-              ).map((section) => (
-                <SheetClose asChild key={section.id}>
-                  <Link
-                    to="/subs/$spaceId/$section"
-                    params={{ spaceId: profile.spaceId, section: section.id }}
-                    className="rounded-md border px-4 py-3 text-sm"
-                  >
-                    {section.label}
-                  </Link>
-                </SheetClose>
-              ))}
+              {sections
+                .filter((section) => !(MOBILE_SECTIONS as readonly string[]).includes(section.id))
+                .map((section) => (
+                  <SheetClose asChild key={section.id}>
+                    <Link
+                      to="/subs/$spaceId/$section"
+                      params={{ spaceId: profile.spaceId, section: section.id }}
+                      className="rounded-md border px-4 py-3 text-sm"
+                    >
+                      {section.label}
+                    </Link>
+                  </SheetClose>
+                ))}
               <SheetClose asChild>
                 <Link to="/dashboard" className="rounded-md border px-4 py-3 text-sm">
                   All Subs

@@ -24,6 +24,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useUnsavedChanges } from "@/lib/nocturne/unsaved";
+import { useAccount } from "@/lib/nocturne/account";
 import { useProfile, useSubName } from "@/lib/nocturne/profile";
 
 export const Route = createFileRoute("/routines")({
@@ -61,6 +62,7 @@ function RoutinesPage() {
     profile = useProfile();
   const [edit, setEdit] = useState<Routine | null>(null);
   // In a Sub's profile, AI drafting has its own section; the routine list stays under Routines.
+  const aiReady = !!useAccount().features?.ai;
   const draftingOnly = profile?.section === "drafting",
     showDraft = !profile || draftingOnly;
   return (
@@ -86,8 +88,13 @@ function RoutinesPage() {
               <Button onClick={() => setEdit(blank())}>New routine</Button>
             )}
           </div>
-          {s.viewRole === "dom" && showDraft && (
+          {s.viewRole === "dom" && showDraft && aiReady && (
             <RoutineDraft key={s.space.id ?? "demo"} onDraft={setEdit} />
+          )}
+          {draftingOnly && !aiReady && (
+            <p className="mt-6 text-sm text-muted-foreground">
+              AI drafting isn't switched on yet. Use New routine on the Routines and tasks page.
+            </p>
           )}
           <ul className={`mt-6 divide-y divide-border ${draftingOnly ? "hidden" : ""}`}>
             {s.routines.map((r) => (

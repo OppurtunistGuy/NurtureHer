@@ -1,10 +1,14 @@
 import type { Agreement, AppState } from "./types";
 import { dateKey } from "./logic";
 
-export const AGREEMENT_VERSION = "master-sub-2026-10-23-v1";
+/**
+ * The founders' own agreement, supplied verbatim. Spaces that already have it keep it exactly,
+ * acknowledgements included; it is never installed in a new space.
+ */
+export const PERSONAL_AGREEMENT_VERSION = "master-sub-2026-10-23-v1";
 
 // User-supplied wording. Keep this verbatim; negotiated additions are separate.
-export const AGREEMENT_MARKDOWN = `# BoundSome
+export const PERSONAL_AGREEMENT_MARKDOWN = `# BoundSome
 
 ## Master & Sub Agreement
 
@@ -103,6 +107,59 @@ Rules, discipline, and consequences are intended to build consistency, trust, an
 
 This agreement is a shared understanding of the dynamic, not a waiver of either person's right to stop or withdraw consent.`;
 
+/** The neutral starting agreement for every new space. Each couple adds their own limits. */
+export const AGREEMENT_VERSION = "boundsome-template-2026-11-01-v1";
+export const AGREEMENT_MARKDOWN = `# BoundSome
+
+## Master & Sub Agreement
+
+This agreement sets out how we use BoundSome together. We are both consenting adults. Either of us can pause or stop at any time, and nothing here overrides that.
+
+### 1. Roles
+
+- The Master leads: sets routines, rules and expectations, and gives clear instructions.
+- The Sub follows the agreed routines and rules, and communicates honestly.
+- We review how it is going together, regularly.
+
+### 2. Limits
+
+- Hard limits are never crossed. We list ours under "Excluded activities" below and can add to them at any time.
+- Interest in one activity is not consent to another. Anything new is discussed and agreed first.
+- Limits can change; a change is agreed before it takes effect.
+
+### 3. Routines & check-ins
+
+- Each routine has clear instructions, a time window and what counts as a check-in.
+- If something gets in the way (illness, an emergency, a genuine difficulty), the Sub says so instead of ignoring the task.
+- If an instruction is unclear, the Sub asks.
+
+### 4. Rewards & consequences
+
+- Rewards and consequences are agreed in advance, per routine.
+- No consequence is automatic: the circumstances are considered first.
+- Consequences stay within our agreed limits. Intimate photos or videos are never required as proof.
+- Using a safeword, pausing, refusing something outside our limits, or withdrawing consent is never punished.
+
+### 5. Consent & safety
+
+- **RED:** stop immediately.
+- **YELLOW:** slow down and check in.
+- Either of us can pause the space. We resume only after we have both talked and both agree.
+- Authority never overrides consent, hard limits or safety.
+
+### 6. Privacy
+
+- What we share here stays between us. We don't share screenshots or details without the other's agreement.
+- No app or storage can promise absolute confidentiality.
+
+### 7. Review
+
+- Either of us can propose a change to this agreement in the app; it applies once we both accept it.
+
+---
+
+This agreement is a shared understanding between us, not a waiver of either person's right to stop or withdraw consent.`;
+
 export function createAgreement(today: string): Agreement {
   return {
     document: { version: AGREEMENT_VERSION, markdown: AGREEMENT_MARKDOWN },
@@ -113,9 +170,9 @@ export function createAgreement(today: string): Agreement {
       "No consequence is automatic simply because a task was missed.",
       "Intimate photos and videos must not be compulsory proof; an alternative must be available.",
     ],
-    excluded: ["Anal play", "Tasting or ingesting semen", "Panties-in-mouth nasty activities"],
-    commWindows:
-      "To be discussed around exams and family commitments. No fixed hours have been supplied.",
+    // Each couple writes their own hard limits; none are assumed.
+    excluded: [],
+    commWindows: "To be agreed together.",
     safeword: "RED",
     checkInSignal: "YELLOW",
     emergencyContact: "For urgent safety needs, stop and communicate outside the app.",
@@ -128,9 +185,20 @@ export function createAgreement(today: string): Agreement {
 /** Adopt the supplied agreement exactly once. A paused dynamic must discuss and
  * resume before any agreement change; the pending update is applied afterward. */
 export function upgradeAgreement(state: AppState, now: Date): AppState {
+  const document = state.agreement.document;
+  // A space that already has the founders' own agreement keeps it, signatures included.
+  // Only the legacy product heading is renamed, which is not a change to agreed terms.
+  if (document?.version === PERSONAL_AGREEMENT_VERSION) {
+    const renamed = document.markdown.replace(/^# NOCTURNE TOGETHER(?=\r?\n)/, "# BoundSome");
+    return renamed === document.markdown
+      ? state
+      : {
+          ...state,
+          agreement: { ...state.agreement, document: { ...document, markdown: renamed } },
+        };
+  }
   // A product-name change is not a change to agreed terms. Preserve signatures,
   // proposals, history and pause state when only the legacy heading differs.
-  const document = state.agreement.document;
   if (
     document?.version === AGREEMENT_VERSION &&
     document.markdown.replace(/^# NOCTURNE TOGETHER(?=\r?\n)/, "# BoundSome") === AGREEMENT_MARKDOWN
@@ -176,7 +244,7 @@ export function upgradeAgreement(state: AppState, now: Date): AppState {
         id: `agreement-${AGREEMENT_VERSION}`,
         at: now.toISOString(),
         by: "system" as const,
-        text: "Installed the supplied Master & Sub Agreement. Previous terms archived; both must acknowledge the new agreement.",
+        text: "Installed the BoundSome agreement template. Previous terms archived; both must acknowledge the new agreement.",
       },
       ...state.activity,
     ].slice(0, 300),

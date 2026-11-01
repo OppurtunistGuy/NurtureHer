@@ -83,8 +83,8 @@ describe("rendered app workflow", () => {
 
     await go("/agreements");
     expect(screen.getByRole("heading", { name: "Master & Sub Agreement" })).toBeInTheDocument();
-    expect(screen.getByText("4. Rule Violations, Punishments & Consequences")).toBeInTheDocument();
-    expect(screen.getByText("7. Communication & Review")).toBeInTheDocument();
+    expect(screen.getByText("4. Rewards & consequences")).toBeInTheDocument();
+    expect(screen.getByText("7. Review")).toBeInTheDocument();
     await click(screen.getByRole("button", { name: "I acknowledge this agreement" }));
     await go("/settings");
     await click(screen.getByRole("radio", { name: /Sub/ }));

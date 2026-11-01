@@ -188,6 +188,8 @@ export interface Prefs {
 
 export interface AppState {
   points?: import("./points").PointsState;
+  /** Optional, so spaces saved before Games existed load unchanged. */
+  games?: import("./games/types").GamesState;
   version: 1 | 2;
   onboarded: boolean;
   myRole: Role;
