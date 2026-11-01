@@ -45,6 +45,7 @@ export const commandSchema = z.discriminatedUnion("type", [
   z
     .object({ type: z.literal("routine.save"), routine: savedStateSchema.shape.routines.element })
     .strict(),
+  z.object({ type: z.literal("agreement.write"), markdown: z.string().max(20000) }).strict(),
   z.object({ type: z.literal("routine.delete"), id }).strict(),
   z
     .object({

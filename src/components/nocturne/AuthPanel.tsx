@@ -41,20 +41,33 @@ export function AuthPanel({
     [accessError, setAccessError] = useState("");
   const [mode, setMode] = useState<"login" | "register" | "forgot" | "reset">("login");
   // The owner's access link carries its code after the #; keep it for this tab only.
+  // Also re-read it when only the # changes (a link pasted into a tab already on BoundSome
+  // doesn't reload the page).
   useEffect(() => {
-    const fromLink = new URLSearchParams(window.location.hash.slice(1)).get("access") ?? "";
-    const code = /^[a-f0-9]{32}$/.test(fromLink) ? fromLink : readStored();
-    if (!/^[a-f0-9]{32}$/.test(code)) return;
-    store(code);
-    void accountActions.checkAccess(code).then((result) => {
-      if (result.status === "valid") {
-        setAccess(code);
-        setMode((current) => (current === "login" ? "register" : current));
-      } else {
-        store("");
-        setAccessError(result.error ?? "This invite link can't be used.");
-      }
-    });
+    let current = "";
+    const read = (fromHashOnly: boolean) => {
+      const fromLink = new URLSearchParams(window.location.hash.slice(1)).get("access") ?? "";
+      const code = /^[a-f0-9]{32}$/.test(fromLink) ? fromLink : fromHashOnly ? "" : readStored();
+      if (!/^[a-f0-9]{32}$/.test(code) || code === current) return;
+      current = code;
+      store(code);
+      setAccessError("");
+      void accountActions.checkAccess(code).then((result) => {
+        if (code !== current) return; // a newer link replaced this one
+        if (result.status === "valid") {
+          setAccess(code);
+          setMode((mode) => (mode === "login" ? "register" : mode));
+        } else {
+          store("");
+          setAccess("");
+          setAccessError(result.error ?? "This invite link can't be used.");
+        }
+      });
+    };
+    read(false);
+    const onHash = () => read(true);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
   }, []);
   useEffect(() => {
     if (inviteToken) setMode((current) => (current === "login" ? "register" : current));

@@ -1,12 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { AppShell } from "@/components/nocturne/AppShell";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
+import { uiActions as actions, useNocturne, useSpaceConnection } from "@/lib/nocturne/store";
 import { useUnsavedChanges } from "@/lib/nocturne/unsaved";
-import { PERSONAL_AGREEMENT_VERSION } from "@/lib/nocturne/agreement-document";
+import {
+  AGREEMENT_MARKDOWN,
+  AGREEMENT_MAX_LENGTH,
+  PERSONAL_AGREEMENT_VERSION,
+} from "@/lib/nocturne/agreement-document";
 
 export const Route = createFileRoute("/agreements")({
   head: () => ({
@@ -20,13 +24,14 @@ export const Route = createFileRoute("/agreements")({
   }),
   component: AgreementsPage,
 });
-const SECTIONS = ["Boundaries", "Excluded activities", "Communication windows"];
+const SECTIONS = ["Agreement text", "Boundaries", "Excluded activities", "Communication windows"];
 
 function AgreementsPage() {
   const s = useNocturne(),
     a = s.agreement,
     me = s.viewRole;
-  const [section, setSection] = useState("Boundaries"),
+  const written = !!a.document?.markdown.trim();
+  const [section, setSection] = useState("Agreement text"),
     [text, setText] = useState("");
   useUnsavedChanges(!!text.trim(), "an agreement proposal");
   const sections =
@@ -47,6 +52,13 @@ function AgreementsPage() {
   return (
     <AppShell eyebrow="Our shared understanding" title="BoundSome">
       <h2 className="text-2xl">Master &amp; Sub Agreement</h2>
+      {!written && me === "sub" && (
+        <p role="status" className="my-5 rounded-md border border-gold/40 p-4 text-sm">
+          {s.names.dom} hasn't written your agreement yet. Once it's ready you'll read it here and
+          both acknowledge it. You can suggest what it should say below.
+        </p>
+      )}
+      {me === "dom" && <AgreementEditor />}
       {s.agreementUpdatePending && (
         <p role="status" className="my-5 rounded-md border border-gold/40 p-4 text-sm">
           Your supplied agreement is waiting to be installed. The dynamic is paused; finish the
@@ -104,12 +116,16 @@ function AgreementsPage() {
         </p>
         <Button
           className="mt-4"
-          disabled={!!a.ack[me]}
+          disabled={!!a.ack[me] || !written}
           onClick={async () => {
             if ((await actions.acknowledgeAgreement()).ok) toast.success("Agreement acknowledged");
           }}
         >
-          {a.ack[me] ? "You've acknowledged" : "I acknowledge this agreement"}
+          {a.ack[me]
+            ? "You've acknowledged"
+            : written
+              ? "I acknowledge this agreement"
+              : "Waiting for the agreement to be written"}
         </Button>
         {a.document && (
           <p className="mt-3 text-xs text-muted-foreground">
@@ -126,7 +142,9 @@ function AgreementsPage() {
           <List title="Boundaries" items={a.boundaries} />
           <div>
             <h3 className="text-xl">Communication windows</h3>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{a.commWindows}</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {a.commWindows || "None agreed yet."}
+            </p>
           </div>
           <p className="text-xs text-muted-foreground">{a.emergencyContact}</p>
         </div>
@@ -134,8 +152,8 @@ function AgreementsPage() {
       <section className="mt-7">
         <h2 className="text-2xl">Propose an addition</h2>
         <p className="mt-2 text-xs leading-6 text-muted-foreground">
-          Either person may propose. The other person reviews it. Accepted additions require both
-          acknowledgements and are recorded separately from the supplied wording.
+          Either person may propose. The other person reviews it. An accepted change to the text is
+          added to the agreement, and both acknowledge it again.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           {SECTIONS.map((x) => (
@@ -145,7 +163,11 @@ function AgreementsPage() {
               variant={section === x ? "secondary" : "outline"}
               onClick={() => setSection(x)}
             >
-              {x === "Excluded activities" ? "Additional limit" : x}
+              {x === "Excluded activities"
+                ? "Hard limit"
+                : x === "Agreement text"
+                  ? "Change to the text"
+                  : x}
             </Button>
           ))}
         </div>
@@ -155,7 +177,9 @@ function AgreementsPage() {
           placeholder={
             section === "Communication windows"
               ? "Proposed communication window"
-              : "Proposed additional term"
+              : section === "Agreement text"
+                ? "What should the agreement say? For example: one check-in call every Sunday."
+                : "Proposed additional term"
           }
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -297,5 +321,120 @@ function List({ title, items }: { title: string; items: string[] }) {
         </ul>
       )}
     </div>
+  );
+}
+
+/**
+ * The Master writes the agreement in their own words. Optional starting points: a short template
+ * for beginners, or a copy of their agreement with another Sub. Saving asks both to acknowledge.
+ */
+function AgreementEditor() {
+  const s = useNocturne(),
+    connection = useSpaceConnection();
+  const current = s.agreement.document?.markdown ?? "";
+  const [draft, setDraft] = useState(current),
+    [open, setOpen] = useState(!current.trim()),
+    [busy, setBusy] = useState(false),
+    [copyFrom, setCopyFrom] = useState("");
+  useEffect(() => setDraft(current), [current]);
+  const changed = draft.trim() !== current.trim();
+  useUnsavedChanges(changed, "the agreement you're writing");
+  const others = connection.spaces.filter(
+    (space) => space.role === "dom" && space.id !== s.space.id,
+  );
+  async function copy(spaceId: string) {
+    setCopyFrom(spaceId);
+    try {
+      const response = await fetch(`/api/space?space=${encodeURIComponent(spaceId)}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: AbortSignal.timeout(15000),
+      });
+      const data = await response.json();
+      const text = data?.state?.agreement?.document?.markdown ?? "";
+      if (!response.ok || !text.trim()) {
+        toast.error("That agreement is empty or couldn't be opened.");
+        return;
+      }
+      setDraft(text);
+      toast.success("Copied. Edit it for this Sub, then save.");
+    } catch {
+      toast.error("Couldn't open that agreement. Check your connection.");
+    } finally {
+      setCopyFrom("");
+    }
+  }
+  return (
+    <details
+      open={open}
+      onToggle={(event) => setOpen((event.target as HTMLDetailsElement).open)}
+      className="my-5 rounded-md border border-gold/40 p-4"
+    >
+      <summary className="cursor-pointer font-display text-xl text-ivory">
+        {current.trim() ? "Edit the agreement" : "Write your agreement"}
+      </summary>
+      <div className="mt-4 space-y-3">
+        <p className="text-xs leading-6 text-muted-foreground">
+          Write it in your own words: your rules, limits and expectations. Start a line with
+          &quot;### &quot; for a section heading and &quot;- &quot; for a point. Saving asks both of
+          you to acknowledge it again.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              setDraft(AGREEMENT_MARKDOWN);
+              toast("Template added. Make it yours, then save.");
+            }}
+          >
+            Start from a short template
+          </Button>
+          {others.map((space) => (
+            <Button
+              key={space.id}
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!!copyFrom}
+              onClick={() => copy(space.id)}
+            >
+              {copyFrom === space.id ? "Copying…" : `Copy my agreement with ${space.partnerName}`}
+            </Button>
+          ))}
+        </div>
+        <Textarea
+          aria-label="Write your agreement"
+          value={draft}
+          maxLength={AGREEMENT_MAX_LENGTH}
+          rows={14}
+          placeholder="For example: ### Our rules"
+          onChange={(event) => setDraft(event.target.value)}
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            disabled={!changed || !draft.trim() || busy}
+            onClick={async () => {
+              setBusy(true);
+              const result = await actions.writeAgreement(draft);
+              setBusy(false);
+              if (result.ok) toast.success("Agreement saved. Both of you acknowledge it below.");
+            }}
+          >
+            {busy ? "Saving…" : "Save agreement"}
+          </Button>
+          {changed && (
+            <Button type="button" variant="ghost" onClick={() => setDraft(current)}>
+              Discard changes
+            </Button>
+          )}
+          <span className="text-xs text-muted-foreground">
+            {draft.length.toLocaleString()} / {AGREEMENT_MAX_LENGTH.toLocaleString()}
+          </span>
+        </div>
+      </div>
+    </details>
   );
 }

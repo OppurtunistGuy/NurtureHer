@@ -170,6 +170,7 @@ function makeActions<T>(dispatch: (command: Command) => T) {
       dispatch({ type: "pause", reason, ...(signal ? { signal } : {}) }),
     ackResume: () => dispatch({ type: "resume" }),
     acknowledgeAgreement: () => dispatch({ type: "agreement.ack" }),
+    writeAgreement: (markdown: string) => dispatch({ type: "agreement.write", markdown }),
     propose: (section: string, text: string) =>
       dispatch({ type: "agreement.propose", section, text }),
     resolveProposal: (id: string, accept: boolean) =>
