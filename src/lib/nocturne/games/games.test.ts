@@ -23,18 +23,39 @@ const active = () => {
 };
 
 describe("starter deck", () => {
-  it("has one card per category and heat level", () => {
+  it("has several cards for every category and heat level, more as it gets hotter", () => {
     for (const category of CATEGORIES) {
-      for (const heat of ["sweet", "spicy", "hot"] as const) {
-        expect(STARTER_DECK.filter((c) => c.category === category && c.heat === heat)).toHaveLength(
-          1,
-        );
-      }
+      const count = (heat: "sweet" | "spicy" | "hot") =>
+        STARTER_DECK.filter((c) => c.category === category && c.heat === heat).length;
+      expect(count("sweet")).toBeGreaterThanOrEqual(3);
+      expect(count("spicy")).toBeGreaterThanOrEqual(4);
+      expect(count("hot")).toBeGreaterThanOrEqual(4);
     }
+    expect(STARTER_DECK.length).toBeGreaterThanOrEqual(80);
+    expect(STARTER_DECK.every((c) => c.title.length <= 200)).toBe(true);
     expect(new Set(STARTER_DECK.map((c) => c.id)).size).toBe(STARTER_DECK.length);
   });
   it("never trips the couple's written hard limits", () => {
     expect(STARTER_DECK.every((card) => cardRespectsLimits(card, HARD))).toBe(true);
+  });
+  it.each([
+    ["Spanking", /spank|swat/i],
+    ["Oral", /mouth/i],
+    ["Restraint, bondage", /bound|tied|restrain|holds you down/i],
+    ["Orgasm control", /edge|finish|touch yourself/i],
+    ["Blindfold", /blindfold/i],
+  ])("a written hard limit (%s) keeps every matching kink card out", (limit, pattern) => {
+    const pool = dealable(STARTER_DECK, ctx({ heat: "hot", hardLimits: [limit] }));
+    const affected = STARTER_DECK.filter((c) => pattern.test(c.title));
+    expect(affected.length).toBeGreaterThan(0);
+    for (const card of affected) expect(pool).not.toContain(card);
+  });
+  it("keeps casual cards out of Spicy and Hot rewards and tasks' wording", () => {
+    expect(
+      STARTER_DECK.some(
+        (c) => /movie tonight|clothes for tomorrow/i.test(c.title) && c.heat !== "sweet",
+      ),
+    ).toBe(false);
   });
 });
 
@@ -90,6 +111,23 @@ describe("limits filter", () => {
     } as never);
     expect(limits).toContain("Public play");
     expect(limits.some((l) => l.startsWith("Anal play"))).toBe(true);
+  });
+  it("still respects limits from an archived agreement after the text was replaced", () => {
+    const limits = hardLimitsFromState({
+      agreement: {
+        excluded: [],
+        document: { version: "standard", markdown: "### 1. Roles\n\n- Respect" },
+        history: [
+          {
+            excluded: ["Old limit"],
+            document: { version: "old", markdown: "- **Hard limits:** Spanking, wax." },
+          },
+        ],
+      },
+    } as never);
+    expect(limits).toEqual(expect.arrayContaining(["Old limit", "Spanking, wax"]));
+    const pool = dealable(STARTER_DECK, ctx({ heat: "hot", hardLimits: limits }));
+    expect(pool.some((c) => /spank|swat/i.test(c.title))).toBe(false);
   });
 });
 
