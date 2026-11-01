@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { dateKey, effectiveStatus, isOverdue, occursOn, taskKey } from "@/lib/nocturne/logic";
 import { agreementReady } from "@/lib/nocturne/engine";
 import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
-import { PERSONAL_AGREEMENT_VERSION } from "@/lib/nocturne/agreement-document";
 
 export const Route = createFileRoute("/today")({
   head: () => ({ meta: [{ title: "Today — BoundSome" }] }),
@@ -57,15 +56,6 @@ function TodayPage() {
       title={dom ? `Good day, ${s.names.dom}` : `Your routine, ${s.names.sub}`}
     >
       <SpaceConnection />
-      {s.agreement.document?.version === PERSONAL_AGREEMENT_VERSION && (
-        <p className="mb-6 border-l-2 border-wine pl-4 text-xs leading-6 text-muted-foreground">
-          Agreed sessions remain the focus until December 16, around exams and family commitments.{" "}
-          <Link to="/agreements" className="text-gold underline">
-            Read our agreement
-          </Link>{" "}
-          before changing the arrangement.
-        </p>
-      )}
       {!ready && (
         <div className="mb-7 rounded-md border border-gold/30 bg-gold/5 p-4 text-sm">
           <p>Review the framework before check-ins begin.</p>

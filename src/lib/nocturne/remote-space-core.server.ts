@@ -237,7 +237,19 @@ export class RemoteRepositoryCore {
   }
   async read(session: string, spaceId?: string) {
     const member = await this.member(session, spaceId);
-    return await this.snapshot(await this.row(member.space_id), member.role, session);
+    return await this.snapshot(await this.upgraded(member.space_id), member.role, session);
+  }
+  /** Applies a pending agreement replacement on first load and saves it, so nobody sees old
+   * wording until someone happens to act. Guarded by revision against a concurrent write. */
+  private async upgraded(spaceId: string): Promise<Row> {
+    const row = await this.row(spaceId),
+      state = this.state(row),
+      next = upgradeAgreement(state, this.now());
+    if (next === state) return row;
+    await this.db
+      .prepare("UPDATE spaces SET body=?, revision=revision+1 WHERE id=? AND revision=?")
+      .run(JSON.stringify(bodySchema.parse(next)), spaceId, row.revision);
+    return await this.row(spaceId);
   }
   async openTelegram(session: string, spaceId: string, routineId: string) {
     return this.transaction(async () => {
