@@ -6,13 +6,28 @@ import { pickCategory, spinWheel } from "./games/wheel";
 import { awardCardPoints, moveToken, openBox, setBoxConsent } from "./games/snakes";
 import { hardLimitsFromState } from "./games/limits";
 import { complete, createSession, join, nextTurn, red, skip, stop, yellow } from "./games/session";
-import { STARTER_DECK } from "./games/starter-deck";
+import { AFTERCARE_DECK, STARTER_DECK } from "./games/starter-deck";
+import {
+  MIN_MATCHED,
+  answerCheckin,
+  counterCard,
+  endNight,
+  finishCard,
+  newNight,
+  nightPool,
+  playCard,
+  saveList,
+  startNight,
+  validNight,
+} from "./games/hand";
 import {
   EMPTY_GAMES,
   HEAT_ORDER,
   type CardCategory,
   type GameId,
   type GameSession,
+  type ListAnswer,
+  type Pace,
   type GamesState,
   type Heat,
   type Result,
@@ -56,9 +71,21 @@ export type Command =
   | { type: "agreement.propose"; section: string; text: string }
   | { type: "agreement.resolve"; id: string; accept: boolean }
   | { type: "prefs"; patch: Partial<AppState["prefs"]> }
-  | { type: "game.start"; game: GameId; heat: Heat; masterOnlyRoll: boolean; box?: boolean }
+  | {
+      type: "game.start";
+      game: GameId;
+      heat: Heat;
+      masterOnlyRoll: boolean;
+      box?: boolean;
+      length?: number;
+      handSize?: number;
+    }
   | { type: "game.join"; box?: boolean }
   | { type: "game.move" }
+  | { type: "game.play"; cardId: string }
+  | { type: "game.counter" }
+  | { type: "game.checkin"; pace: Pace }
+  | { type: "game.list"; answers: Record<string, ListAnswer> }
   | { type: "game.box" }
   | { type: "game.roll" }
   | { type: "game.spin" }
@@ -92,6 +119,7 @@ const commander: Command["type"][] = [
   "request.resolve",
   "invite",
   "game.hide",
+  "game.play",
 ];
 const partner: Command["type"][] = [
   "task.prepare",
@@ -100,6 +128,7 @@ const partner: Command["type"][] = [
   "request",
   "game.refuse",
   "game.box",
+  "game.counter",
 ];
 
 const ok = (value: GameSession): Result<GameSession> => ({ ok: true, value });
@@ -285,9 +314,22 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
     case "game.start": {
       requireThat(s.space.paired, "Games need both people in the space.");
       requireThat(
-        cmd.game === "dice" || cmd.game === "wheel" || cmd.game === "snakes",
+        ["dice", "wheel", "snakes", "hand"].includes(cmd.game),
         "That game isn't available yet.",
       );
+      if (cmd.game === "hand") {
+        requireThat(by === "dom", "The Master deals Hand of Cards.");
+        requireThat(!cmd.masterOnlyRoll, "Hand of Cards has no dice to lock.");
+        requireThat(
+          validNight(cmd.length ?? 5, cmd.handSize ?? 3),
+          "Choose 3, 5, 7 or 10 cards and a hand of 3 or 5.",
+        );
+        requireThat(
+          nightPool(STARTER_DECK, gamesOf(s).lists, { ...gameDeal(s), heat: "hot" }).length >=
+            MIN_MATCHED,
+          `You both need at least ${MIN_MATCHED} cards marked yes or maybe on your lists first.`,
+        );
+      }
       requireThat(
         cmd.game !== "snakes" || !cmd.masterOnlyRoll,
         "In Snakes & Ladders everyone rolls on their own turn.",
@@ -302,8 +344,11 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
         !g.session || g.session.status === "stopped",
         "A game is already running. Stop it first.",
       );
+      const base = createSession(ctx.id(), cmd.game, cmd.heat, cmd.masterOnlyRoll);
       const created = setBoxConsent(
-        createSession(ctx.id(), cmd.game, cmd.heat, cmd.masterOnlyRoll),
+        cmd.game === "hand"
+          ? { ...base, night: newNight(cmd.length ?? 5, cmd.handSize ?? 3) }
+          : base,
         by,
         cmd.box === true,
       );
@@ -312,16 +357,43 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
         s,
         started,
         log,
-        `Started a ${{ wheel: "Wheel of Fortune", snakes: "Snakes & Ladders", dice: "Dice Roll" }[cmd.game]} game. Waiting for the other person to join.`,
+        `Started a ${{ wheel: "Wheel of Fortune", snakes: "Snakes & Ladders", dice: "Dice Roll", hand: "Hand of Cards" }[cmd.game]} game. Waiting for the other person to join.`,
       );
     }
-    case "game.join":
+    case "game.join": {
+      const joined = join(setBoxConsent(liveGame(s), by, cmd.box === true), by);
+      if (!joined.ok) throw new Error(joined.error);
       return applyGame(
         s,
-        join(setBoxConsent(liveGame(s), by, cmd.box === true), by),
+        ok(startNight(joined.value, STARTER_DECK, gamesOf(s).lists, gameDeal(s), gameRandom(ctx))),
         log,
         "Joined the game.",
       );
+    }
+    case "game.play":
+      nonempty(cmd.cardId, 100);
+      return applyGame(s, playCard(liveGame(s), by, cmd.cardId), log);
+    case "game.counter":
+      return applyGame(s, counterCard(liveGame(s), by, gameRandom(ctx)), log);
+    case "game.checkin":
+      return applyGame(
+        s,
+        answerCheckin(
+          liveGame(s),
+          by,
+          cmd.pace,
+          STARTER_DECK,
+          gamesOf(s).lists,
+          gameDeal(s),
+          AFTERCARE_DECK,
+          gameRandom(ctx),
+        ),
+        log,
+      );
+    case "game.list": {
+      const known = new Set(STARTER_DECK.map((card) => card.id));
+      return { ...s, games: saveList(gamesOf(s), by, cmd.answers, known) };
+    }
     case "game.move":
       return applyGame(
         s,
@@ -355,6 +427,15 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
       );
     case "game.done": {
       const live = liveGame(s);
+      if (live.game === "hand")
+        return applyGame(
+          s,
+          live.night?.phase === "aftercare"
+            ? endNight(live)
+            : finishCard(live, "done", AFTERCARE_DECK, gameRandom(ctx)),
+          log,
+          live.night?.phase === "aftercare" ? "Finished a Hand of Cards night." : undefined,
+        );
       const finished = complete(awardCardPoints(live));
       if (!finished.ok) throw new Error(finished.error);
       return applyGame(s, nextTurn(finished.value), log);
@@ -367,10 +448,32 @@ export function transition(s: AppState, cmd: Command, ctx: Context): AppState {
       );
       const skipped = skip(session, by);
       if (!skipped.ok) throw new Error(skipped.error);
+      if (session.game === "hand")
+        // In Hand of Cards the Sub's free skips are her Mercy cards.
+        return applyGame(
+          s,
+          finishCard(
+            { ...skipped.value, currentCard: session.currentCard },
+            "mercy",
+            AFTERCARE_DECK,
+            gameRandom(ctx),
+          ),
+          log,
+        );
       return applyGame(s, nextTurn(skipped.value), log);
     }
     case "game.yellow": {
-      const skipped = yellow(liveGame(s));
+      const current = liveGame(s);
+      if (current.game === "hand") {
+        requireThat(current.night?.phase === "play", "There's no card to skip.");
+        return applyGame(
+          s,
+          finishCard(current, "yellow", AFTERCARE_DECK, gameRandom(ctx)),
+          log,
+          "YELLOW: skipped the card.",
+        );
+      }
+      const skipped = yellow(current);
       if (!skipped.ok) throw new Error(skipped.error);
       return applyGame(s, nextTurn(skipped.value), log, "YELLOW: skipped the card.");
     }

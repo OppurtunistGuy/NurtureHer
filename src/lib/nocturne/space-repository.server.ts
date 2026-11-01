@@ -21,6 +21,7 @@ import { z } from "zod";
 import { pointsAwardSchema, pointsLevelsSchema } from "./points";
 import { gameCommandSchemas } from "./games/schema";
 import { gamesEnabled } from "./games/flag";
+import { gamesForViewer } from "./games/hand";
 import { createInitialState } from "./initial-state";
 import { savedStateSchema } from "./storage";
 import { transition, type Command } from "./engine";
@@ -293,12 +294,16 @@ export class SpaceRepository {
           paused: state.pause.active,
         };
       }),
-      state: {
-        ...current,
-        myRole: role,
-        viewRole: role,
-        ...(role !== "sub" ? { challenge: undefined } : {}),
-      },
+      // Each person only gets what they may see: own game list, Master's hand only for the Master.
+      state: gamesForViewer(
+        {
+          ...current,
+          myRole: role,
+          viewRole: role,
+          ...(role !== "sub" ? { challenge: undefined } : {}),
+        },
+        role,
+      ),
       revision: row.revision,
       createdByMe: role === row.creator_role,
       invite:

@@ -225,3 +225,69 @@ describe("Games over the shared API", () => {
     expect(partner.snapshot.state.games!.session!.turn).toBe("sub");
   });
 });
+
+describe("Hand of Cards over the shared API", () => {
+  it("keeps each list and the Master's hand private, and plays a round", async () => {
+    process.env["GAMES_ENABLED"] = "1";
+    const { creator, partner } = await readyPair();
+    const { STARTER_DECK } = await import("./starter-deck");
+    const answers = Object.fromEntries(STARTER_DECK.map((c) => [c.id, "yes"]));
+    expect((await creator.command({ type: "game.list", answers })).response.status).toBe(200);
+    await partner.request();
+    expect(
+      (await partner.command({ type: "game.list", answers: { ...answers, "svc-sweet": "no" } }))
+        .response.status,
+    ).toBe(200);
+    // Each person only sees their own list.
+    expect(partner.snapshot.state.games!.lists!.dom).toEqual({});
+    expect(partner.snapshot.state.games!.matchedCount).toBe(STARTER_DECK.length - 1);
+    await creator.request();
+    expect(creator.snapshot.state.games!.lists!.sub).toEqual({});
+    // Only the Master deals, and a bad night length is refused.
+    const start = {
+      type: "game.start",
+      game: "hand",
+      heat: "spicy",
+      masterOnlyRoll: false,
+      length: 5,
+      handSize: 5,
+    };
+    expect((await partner.command(start)).response.status).toBe(400);
+    expect((await creator.command({ ...start, length: 4 })).response.status).toBe(400);
+    expect((await creator.command(start)).response.status).toBe(200);
+    await partner.request();
+    expect((await partner.command({ type: "game.join" })).response.status).toBe(200);
+    // The Sub's copy never carries the Master's cards.
+    const subNight = partner.snapshot.state.games!.session!.night!;
+    expect(subNight.hand).toEqual([]);
+    expect(subNight.handCount).toBe(5);
+    await creator.request();
+    const hand = creator.snapshot.state.games!.session!.night!.hand;
+    expect(hand).toHaveLength(5);
+    expect(hand.map((c) => c.id)).not.toContain("svc-sweet");
+    expect(
+      (await partner.command({ type: "game.play", cardId: hand[0]!.id })).response.status,
+    ).toBe(400);
+    expect(
+      (await creator.command({ type: "game.play", cardId: hand[0]!.id })).response.status,
+    ).toBe(200);
+    await partner.request();
+    expect(partner.snapshot.state.games!.session!.currentCard!.id).toBe(hand[0]!.id);
+    expect((await partner.command({ type: "game.counter" })).response.status).toBe(200);
+    expect((await partner.command({ type: "game.done" })).response.status).toBe(200);
+    // Check-in answers stay hidden until both are in.
+    expect((await partner.command({ type: "game.checkin", pace: "stay" })).response.status).toBe(
+      200,
+    );
+    await creator.request();
+    const night = creator.snapshot.state.games!.session!.night!;
+    expect(night.checkin.sub).toBeNull();
+    expect(night.answered).toEqual({ dom: false, sub: true });
+    expect((await creator.command({ type: "game.checkin", pace: "up" })).response.status).toBe(200);
+    expect(creator.snapshot.state.games!.session!.night!).toMatchObject({
+      phase: "choose",
+      round: 2,
+    });
+    expect(creator.snapshot.state.games!.session!.heat).toBe("spicy");
+  });
+});

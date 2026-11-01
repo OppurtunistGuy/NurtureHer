@@ -466,6 +466,28 @@ export function SurpriseBoxPanel({
 /* ---------- Game picker art ---------- */
 
 export function GameArt({ game }: { game: GameId }) {
+  if (game === "hand")
+    return (
+      <svg viewBox="0 0 64 48" className="h-12 w-16" aria-hidden>
+        {[-16, 0, 16].map((r, i) => (
+          <g key={r} transform={`rotate(${r} 32 46)`}>
+            <rect
+              x="22"
+              y="6"
+              width="20"
+              height="30"
+              rx="3"
+              fill={i === 1 ? "#2c1019" : "#3a0c18"}
+              stroke="#d9b56a"
+              strokeWidth="1.6"
+            />
+            {i === 1 && (
+              <path d="M28 16 h8 M28 21 h8 M28 26 h5" stroke="#efe2cc" strokeWidth="1.4" />
+            )}
+          </g>
+        ))}
+      </svg>
+    );
   if (game === "dice")
     return (
       <svg viewBox="0 0 80 48" className="h-12 w-20" aria-hidden>

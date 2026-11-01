@@ -98,7 +98,10 @@ export function PlayCard({
   children,
   footnote,
   showPoints = false,
+  aftercare = false,
 }: {
+  /** The last card of a Hand of Cards night, for both people. */
+  aftercare?: boolean;
   card: GameCard;
   forName: string;
   /** Only Snakes & Ladders keeps a game score, so other games don't promise points. */
@@ -106,7 +109,9 @@ export function PlayCard({
   children: ReactNode;
   footnote?: ReactNode;
 }) {
-  const kind = KIND[card.kind];
+  const kind = aftercare
+    ? { label: "Aftercare", frame: "border-[#efe2cc]", chip: "bg-[#efe2cc]/15 text-[#efe2cc]" }
+    : KIND[card.kind];
   return (
     <article
       key={card.id}

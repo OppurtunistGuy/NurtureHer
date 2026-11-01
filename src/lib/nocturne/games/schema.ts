@@ -12,9 +12,35 @@ const card = z.object({
   points: z.number().int().min(0).max(100).optional(),
   limitTags: z.array(z.string().max(60)).max(20),
 });
+const pace = z.enum(["end", "down", "stay", "up"]);
+const answer = z.enum(["yes", "maybe", "no"]);
+const answers = z
+  .record(z.string().min(1).max(100), answer)
+  .refine((value) => Object.keys(value).length <= 300, "Too many answers.");
+const night = z.object({
+  length: z.number().int().min(1).max(10),
+  round: z.number().int().min(1).max(10),
+  handSize: z.number().int().min(1).max(5),
+  hand: z.array(card).max(5),
+  handCount: z.number().int().min(0).max(5).optional(),
+  counter: z.number().int().min(0).max(3),
+  phase: z.enum(["choose", "play", "checkin", "aftercare"]),
+  checkin: z.object({ dom: pace.nullable(), sub: pace.nullable() }),
+  answered: z.object({ dom: z.boolean(), sub: z.boolean() }).optional(),
+  played: z
+    .array(
+      z.object({
+        title: z.string().max(200),
+        heat: heatSchema,
+        outcome: z.enum(["done", "mercy", "countered", "yellow"]),
+      }),
+    )
+    .max(30),
+});
 const session = z.object({
   id: z.string().min(1).max(100),
-  game: z.enum(["dice", "wheel", "snakes"]),
+  game: z.enum(["dice", "wheel", "snakes", "hand"]),
+  night: night.optional(),
   masterOnlyRoll: z.boolean().default(false),
   lastRoll: z
     .object({ die1: z.number().int().min(1).max(6), die2: z.number().int().min(1).max(6) })
@@ -62,6 +88,7 @@ export const gamesStateSchema = z.object({
   session: session.nullable(),
   hidden: z.array(z.string().max(100)).max(500),
   notForMe: z.array(z.string().max(100)).max(500),
+  lists: z.object({ dom: answers, sub: answers }).optional(),
 });
 
 /** Game commands as the server accepts them. Nothing else gets through. */
@@ -69,8 +96,10 @@ export const gameCommandSchemas = [
   z
     .object({
       type: z.literal("game.start"),
-      game: z.enum(["dice", "wheel", "snakes"]),
+      game: z.enum(["dice", "wheel", "snakes", "hand"]),
       box: z.boolean().optional(),
+      length: z.union([z.literal(3), z.literal(5), z.literal(7), z.literal(10)]).optional(),
+      handSize: z.union([z.literal(3), z.literal(5)]).optional(),
       heat: heatSchema,
       masterOnlyRoll: z.boolean(),
     })
@@ -85,6 +114,10 @@ export const gameCommandSchemas = [
     })
     .strict(),
   z.object({ type: z.literal("game.join"), box: z.boolean().optional() }).strict(),
+  z.object({ type: z.literal("game.play"), cardId: z.string().min(1).max(100) }).strict(),
+  z.object({ type: z.literal("game.counter") }).strict(),
+  z.object({ type: z.literal("game.checkin"), pace }).strict(),
+  z.object({ type: z.literal("game.list"), answers }).strict(),
   z.object({ type: z.literal("game.hide"), cardId: z.string().min(1).max(100) }).strict(),
   z.object({ type: z.literal("game.refuse"), cardId: z.string().min(1).max(100) }).strict(),
 ] as const;

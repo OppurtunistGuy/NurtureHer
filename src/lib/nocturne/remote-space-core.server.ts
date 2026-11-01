@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createInitialState } from "./initial-state";
 import { parseCommand, bodySchema, SpaceError, SESSION_SECONDS } from "./space-repository.server";
 import { gamesEnabled } from "./games/flag";
+import { gamesForViewer } from "./games/hand";
 import { transition, type Command } from "./engine";
 import { createAgreement, upgradeAgreement } from "./agreement-document";
 import { dateKey } from "./logic";
@@ -96,12 +97,16 @@ export class RemoteRepositoryCore {
           };
         }),
       ),
-      state: {
-        ...current,
-        myRole: role,
-        viewRole: role,
-        ...(role !== "sub" ? { challenge: undefined } : {}),
-      },
+      // Each person only gets what they may see: own game list, Master's hand only for the Master.
+      state: gamesForViewer(
+        {
+          ...current,
+          myRole: role,
+          viewRole: role,
+          ...(role !== "sub" ? { challenge: undefined } : {}),
+        },
+        role,
+      ),
       revision: row.revision,
       createdByMe: role === row.creator_role,
       invite:

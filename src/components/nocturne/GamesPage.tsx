@@ -3,6 +3,8 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/nocturne/AppShell";
 import { HEAT } from "@/components/nocturne/games/theme";
 import { HeatChip, PlayCard, SafetyBar, Token, TurnBar } from "@/components/nocturne/games/parts";
+import { HandSetup, HandTable, ListBuilder, Recap } from "@/components/nocturne/games/HandOfCards";
+import { MIN_MATCHED, matchedIds } from "@/lib/nocturne/games/hand";
 import {
   BoardStage,
   DiceStage,
@@ -24,7 +26,7 @@ import {
 import { uiActions as actions, useGamesEnabled, useNocturne } from "@/lib/nocturne/store";
 import type { Role } from "@/lib/nocturne/types";
 
-type Playable = "dice" | "wheel" | "snakes";
+type Playable = "dice" | "wheel" | "snakes" | "hand";
 const GAMES: { id: Playable; name: string; line: string; time: string }[] = [
   {
     id: "dice",
@@ -44,11 +46,18 @@ const GAMES: { id: Playable; name: string; line: string; time: string }[] = [
     line: "Race to 100. Task squares deal cards, snakes can open the Surprise Box.",
     time: "Around 30 minutes",
   },
+  {
+    id: "hand",
+    name: "Hand of Cards",
+    line: "The Master holds a hand and chooses every card. Mercy, Counter, and aftercare to close.",
+    time: "20 minutes to an evening",
+  },
 ];
 const NAME: Record<GameId, string> = {
   dice: "Dice Roll",
   wheel: "Wheel of Fortune",
   snakes: "Snakes & Ladders",
+  hand: "Hand of Cards",
 };
 
 function Note({ children }: { children: React.ReactNode }) {
@@ -110,6 +119,9 @@ export function GamesPage() {
     [heat, setHeat] = useState<Heat>("spicy"),
     [lock, setLock] = useState(false),
     [box, setBox] = useState(false),
+    [length, setLength] = useState(5),
+    [handSize, setHandSize] = useState(3),
+    [listOpen, setListOpen] = useState(false),
     [busy, setBusy] = useState(false);
   const me = s.viewRole,
     other: Role = me === "dom" ? "sub" : "dom",
@@ -148,14 +160,25 @@ export function GamesPage() {
     );
   } else if (s.pause.active && !running) {
     body = <Note>The space is paused, so games are locked until you both resume.</Note>;
+  } else if (listOpen && (!session || session.status === "stopped")) {
+    body = <ListBuilder onClose={() => setListOpen(false)} />;
   } else if (!session || session.status === "stopped") {
     /* ---------- Pick and set up a game ---------- */
     const chosen = GAMES.find((g) => g.id === game)!;
+    const isHand = game === "hand";
+    const handBlocked =
+      isHand &&
+      (me !== "dom" || (s.games?.matchedCount ?? matchedIds(s.games?.lists).size) < MIN_MATCHED);
     body = (
       <div className="space-y-8">
         {session?.status === "stopped" && (
           <div className="flex items-center gap-3 rounded-xl border border-border bg-[#1a0b11] px-4 py-3">
-            {session.stopReason === "finished" && session.winner ? (
+            {session.stopReason === "finished" && session.night ? (
+              <div className="w-full space-y-3 py-1">
+                <p className="font-display text-lg text-ivory">Last night of Hand of Cards</p>
+                <Recap played={session.night.played} />
+              </div>
+            ) : session.stopReason === "finished" && session.winner ? (
               <>
                 <Token role={session.winner} name={names[session.winner]} />
                 <p className="text-sm">
@@ -185,7 +208,7 @@ export function GamesPage() {
           <h2 id="pick-game" className="text-2xl text-ivory">
             Choose a game
           </h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Game">
+          <div className="mt-4 grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Game">
             {GAMES.map((g) => {
               const on = game === g.id;
               return (
@@ -211,7 +234,7 @@ export function GamesPage() {
 
         <section aria-labelledby="pick-heat" className="space-y-3">
           <h2 id="pick-heat" className="text-2xl text-ivory">
-            How hot?
+            {isHand ? "Start at" : "How hot?"}
           </h2>
           <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Heat level">
             {HEAT_ORDER.map((h) => (
@@ -233,7 +256,17 @@ export function GamesPage() {
           </Note>
         </section>
 
-        {(game === "snakes" || me === "dom") && (
+        {isHand && (
+          <HandSetup
+            length={length}
+            setLength={setLength}
+            handSize={handSize}
+            setHandSize={setHandSize}
+            onOpenList={() => setListOpen(true)}
+          />
+        )}
+
+        {!isHand && (game === "snakes" || me === "dom") && (
           <section aria-label="Options" className="space-y-3">
             {game === "snakes" ? (
               <Choice checked={box} onChange={setBox} title="Include the Surprise Box">
@@ -258,23 +291,27 @@ export function GamesPage() {
           <Button
             size="lg"
             className="w-full sm:w-auto"
-            disabled={busy}
+            disabled={busy || handBlocked}
             onClick={() =>
               run(() =>
                 actions.startGame(
                   game,
                   heat,
-                  me === "dom" && lock && game !== "snakes",
+                  me === "dom" && lock && game !== "snakes" && !isHand,
                   game === "snakes" && box,
+                  isHand ? { length, handSize } : undefined,
                 ),
               )
             }
           >
-            Start {chosen.name}
+            {isHand ? "Start the night" : `Start ${chosen.name}`}
           </Button>
           <Note>
-            Starting counts as your yes. {names[other]} joins to begin, and either of you can stop
-            at any time.
+            {isHand && me !== "dom"
+              ? `${names.dom} deals this one. Mark your list so it's ready.`
+              : isHand && handBlocked
+                ? `You both need ${MIN_MATCHED} cards marked yes or maybe first.`
+                : `Starting counts as your yes. ${names[other]} joins to begin, and either of you can stop at any time.`}
           </Note>
         </div>
       </div>
@@ -326,6 +363,25 @@ export function GamesPage() {
           </Button>
         )}
       </section>
+    );
+  } else if (session.game === "hand" && session.night) {
+    body = (
+      <div className="space-y-5">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-2xl text-ivory sm:text-3xl">Hand of Cards</h2>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => run(() => actions.stopGame())}
+            className="text-sm text-muted-foreground underline underline-offset-4 hover:text-ivory"
+          >
+            End game
+          </button>
+        </header>
+        <div ref={focusRef} className="scroll-mb-40">
+          <HandTable session={session} names={names} me={me} busy={busy} run={run} />
+        </div>
+      </div>
     );
   } else {
     /* ---------- Playing ---------- */
@@ -563,10 +619,16 @@ export function GamesPage() {
         {playing && session && (
           <SafetyBar
             busy={busy}
-            canYellow={!!session.currentCard}
+            canYellow={
+              session.game === "hand" ? session.night?.phase === "play" : !!session.currentCard
+            }
             onYellow={() => run(() => actions.yellowCard())}
             onRed={() => run(() => actions.redGame())}
-            skipsNote={`Free skips: you ${session.skips[me]}, ${names[other]} ${session.skips[other]}`}
+            skipsNote={
+              session.game === "hand"
+                ? `${me === "sub" ? "You hold" : `${names.sub} holds`} ${session.skips.sub} Mercy`
+                : `Free skips: you ${session.skips[me]}, ${names[other]} ${session.skips[other]}`
+            }
           />
         )}
       </div>
