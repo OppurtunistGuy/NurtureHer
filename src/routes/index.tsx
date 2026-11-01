@@ -158,6 +158,7 @@ function Onboarding() {
             </div>
           ) : (
             <AuthPanel
+              inviteToken={mode === "join" && preview ? token : undefined}
               intro={
                 mode === "join" && preview
                   ? `${preview.creatorName} invited you to join as ${preview.role === "dom" ? "Master" : "Sub"}. Log in or create an account to accept.`

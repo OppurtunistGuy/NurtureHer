@@ -390,5 +390,208 @@ for (const backend of ["local SQLite", "remote libSQL"] as const) {
       expect(renamed.body.account.name).toBe("New name");
       expect((await browser.account()).body.account.name).toBe("New name");
     });
+
+    describe("invite-only access", () => {
+      const OWNER = "owner@example.test";
+      beforeEach(() => {
+        delete process.env["OPEN_SIGNUP"];
+        process.env["OWNER_EMAILS"] = `someone@else.test, ${OWNER.toUpperCase()}`;
+      });
+      afterEach(() => {
+        process.env["OPEN_SIGNUP"] = "1";
+        delete process.env["OWNER_EMAILS"];
+      });
+      /** The owner's account exists before launch; create it with the test switch on. */
+      async function ownerBrowser() {
+        const owner = new Browser("192.0.2.200");
+        process.env["OPEN_SIGNUP"] = "1";
+        await owner.register(OWNER, "Owner");
+        delete process.env["OPEN_SIGNUP"];
+        return owner;
+      }
+      const codeOf = (link: string) => new URL(link).hash.replace("#access=", "");
+
+      it("refuses sign-up without an invite, and says why", async () => {
+        const stranger = new Browser("192.0.2.1");
+        const result = await stranger.register("stranger@example.test");
+        expect(result.status).toBe(403);
+        expect(result.body.error).toContain("invite-only");
+        expect((await stranger.account()).body).toMatchObject({
+          account: null,
+          features: { inviteOnly: true },
+        });
+      });
+
+      it("lets the owner create a link that works once, and shows who used it", async () => {
+        const owner = await ownerBrowser();
+        expect((await owner.account()).body.owner).toBe(true);
+        const made = await owner.call({ op: "owner.access.create", label: "Rahul (tester)" });
+        expect(made.status).toBe(201);
+        expect(made.body.link).toMatch(/\/dashboard#access=[a-f0-9]{32}$/);
+        const code = codeOf(made.body.link);
+        const rahul = new Browser("192.0.2.2");
+        expect((await rahul.call({ op: "access.check", code })).body.status).toBe("valid");
+        const joined = await rahul.call({
+          op: "auth.register",
+          email: "rahul@example.test",
+          name: "Rahul",
+          password: PASSWORD,
+          adult: true,
+          access: code,
+        });
+        expect(joined.status).toBe(201);
+        expect((await rahul.account()).body.owner).toBe(false);
+        // The same link can't be used twice.
+        const again = await new Browser("192.0.2.3").call({
+          op: "auth.register",
+          email: "second@example.test",
+          name: "Second",
+          password: PASSWORD,
+          adult: true,
+          access: code,
+        });
+        expect(again.status).toBe(403);
+        expect(again.body.error).toContain("already been used");
+        const list = (await owner.call({ op: "owner.access.list" })).body.invites;
+        expect(list[0]).toMatchObject({
+          label: "Rahul (tester)",
+          status: "used",
+          usedBy: { name: "Rahul", email: "rahul@example.test" },
+        });
+      });
+
+      it("refuses expired, cancelled and made-up links", async () => {
+        const owner = await ownerBrowser();
+        const old = codeOf(
+          (await owner.call({ op: "owner.access.create", label: "Old" })).body.link,
+        );
+        const cancelled = (await owner.call({ op: "owner.access.create", label: "Cancel me" }))
+          .body;
+        const list = (await owner.call({ op: "owner.access.list" })).body.invites;
+        const cancelId = list.find((item: { label: string }) => item.label === "Cancel me").id;
+        expect((await owner.call({ op: "owner.access.revoke", id: cancelId })).status).toBe(200);
+        clock = new Date(clock.valueOf() + 8 * 24 * 60 * 60 * 1000);
+        const tryCode = (code: string) =>
+          new Browser("192.0.2.9").call({
+            op: "auth.register",
+            email: `p${Math.random().toString(16).slice(2)}@example.test`,
+            name: "P",
+            password: PASSWORD,
+            adult: true,
+            access: code,
+          });
+        expect((await tryCode(old)).body.error).toContain("expired");
+        expect((await tryCode(codeOf(cancelled.link))).body.error).toContain("cancelled");
+        expect((await tryCode("0".repeat(32))).body.error).toContain("isn't valid");
+      });
+
+      it("lets a Sub join through the Master's live invitation, without the owner's link", async () => {
+        const owner = await ownerBrowser();
+        const code = codeOf(
+          (await owner.call({ op: "owner.access.create", label: "Maya" })).body.link,
+        );
+        const master = new Browser("192.0.2.20");
+        await master.call({
+          op: "auth.register",
+          email: "maya@example.test",
+          name: "Maya",
+          password: PASSWORD,
+          adult: true,
+          access: code,
+        });
+        const created = await master.create("Maya");
+        const sub = new Browser("192.0.2.21");
+        const registered = await sub.call({
+          op: "auth.register",
+          email: "tara@example.test",
+          name: "Tara",
+          password: PASSWORD,
+          adult: true,
+          invite: created.body.invite.token,
+        });
+        expect(registered.status).toBe(201);
+        expect(
+          (
+            await sub.call({
+              op: "join",
+              token: created.body.invite.token,
+              name: "Tara",
+              adult: true,
+            })
+          ).status,
+        ).toBe(201);
+        // A made-up space invitation is refused.
+        const fake = await new Browser("192.0.2.22").call({
+          op: "auth.register",
+          email: "fake@example.test",
+          name: "Fake",
+          password: PASSWORD,
+          adult: true,
+          invite: "a".repeat(64),
+        });
+        expect(fake.status).toBeGreaterThanOrEqual(400);
+      });
+
+      it("keeps owner tools for the owner only, and refuses cancelling a used link", async () => {
+        const owner = await ownerBrowser();
+        const code = codeOf(
+          (await owner.call({ op: "owner.access.create", label: "A" })).body.link,
+        );
+        const person = new Browser("192.0.2.30");
+        await person.call({
+          op: "auth.register",
+          email: "a@example.test",
+          name: "A",
+          password: PASSWORD,
+          adult: true,
+          access: code,
+        });
+        for (const op of ["owner.access.list", "owner.feedback.list"])
+          expect((await person.call({ op })).status).toBe(403);
+        expect((await person.call({ op: "owner.access.create", label: "x" })).status).toBe(403);
+        expect((await new Browser("192.0.2.31").call({ op: "owner.access.list" })).status).toBe(
+          401,
+        );
+        const id = (await owner.call({ op: "owner.access.list" })).body.invites[0].id;
+        expect((await owner.call({ op: "owner.access.revoke", id })).status).toBe(409);
+      });
+
+      it("saves feedback for the owner to read, with an hourly limit", async () => {
+        const owner = await ownerBrowser();
+        const code = codeOf(
+          (await owner.call({ op: "owner.access.create", label: "F" })).body.link,
+        );
+        const tester = new Browser("192.0.2.40");
+        await tester.call({
+          op: "auth.register",
+          email: "f@example.test",
+          name: "Fiona",
+          password: PASSWORD,
+          adult: true,
+          access: code,
+        });
+        expect(
+          (await new Browser("192.0.2.41").call({ op: "feedback.send", text: "Hello there" }))
+            .status,
+        ).toBe(401);
+        expect(
+          (
+            await tester.call({
+              op: "feedback.send",
+              text: "Routine editor is great",
+              page: "/routines",
+            })
+          ).status,
+        ).toBe(201);
+        const feedback = (await owner.call({ op: "owner.feedback.list" })).body.feedback;
+        expect(feedback[0]).toMatchObject({
+          text: "Routine editor is great",
+          page: "/routines",
+          from: { name: "Fiona", email: "f@example.test" },
+        });
+        for (let i = 0; i < 9; i++) await tester.call({ op: "feedback.send", text: `note ${i}` });
+        expect((await tester.call({ op: "feedback.send", text: "one too many" })).status).toBe(429);
+      });
+    });
   });
 }

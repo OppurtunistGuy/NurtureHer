@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { uiActions as actions, useNocturne } from "@/lib/nocturne/store";
 import { useUnsavedChanges } from "@/lib/nocturne/unsaved";
+import { PERSONAL_AGREEMENT_VERSION } from "@/lib/nocturne/agreement-document";
 
 export const Route = createFileRoute("/agreements")({
   head: () => ({
@@ -65,7 +66,7 @@ function AgreementsPage() {
           </p>
         </div>
       </div>
-      {a.document && (
+      {a.document?.version === PERSONAL_AGREEMENT_VERSION && (
         <p className="mb-6 border-l-2 border-wine pl-4 text-sm leading-6 text-muted-foreground">
           Until December 16: focus on agreed sessions around exams and family commitments. Review
           the arrangement afterward. The app does not automatically expand its scope on that date.
@@ -284,11 +285,17 @@ function List({ title, items }: { title: string; items: string[] }) {
   return (
     <div>
       <h3 className="text-xl">{title}</h3>
-      <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-6 text-muted-foreground">
-        {items.map((item, i) => (
-          <li key={i}>{item}</li>
-        ))}
-      </ul>
+      {items.length === 0 ? (
+        <p className="mt-2 text-sm text-muted-foreground">
+          None written yet. Add yours with a proposal below; it applies once you both accept.
+        </p>
+      ) : (
+        <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-6 text-muted-foreground">
+          {items.map((item, i) => (
+            <li key={i}>{item}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

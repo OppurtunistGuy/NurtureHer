@@ -70,6 +70,15 @@ export function AccountMenu() {
         <DropdownMenuItem onSelect={() => void navigate({ to: "/dashboard" })}>
           Dashboard
         </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void navigate({ to: "/guide" })}>Guide</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => void navigate({ to: "/guide", hash: "feedback" })}>
+          Send feedback
+        </DropdownMenuItem>
+        {me.owner && (
+          <DropdownMenuItem onSelect={() => void navigate({ to: "/owner" })}>
+            Owner: invites &amp; feedback
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={async () => {
@@ -415,10 +424,17 @@ function ProfileBar({ profile }: { profile: Profile }) {
   );
 }
 
+/** AI drafting is hidden until the server has an AI key, so nobody meets a broken button. */
+function useVisibleSections() {
+  const me = useAccount();
+  return SECTIONS.filter((section) => section.id !== "drafting" || !!me.features?.ai);
+}
+
 function ProfileSections({ profile }: { profile: Profile }) {
+  const sections = useVisibleSections();
   return (
     <>
-      {SECTIONS.map((section) => (
+      {sections.map((section) => (
         <Link
           key={section.id}
           to="/subs/$spaceId/$section"
@@ -435,6 +451,7 @@ function ProfileSections({ profile }: { profile: Profile }) {
 
 const MOBILE_SECTIONS = ["overview", "routines", "submissions", "points"] as const;
 function ProfileMobileNav({ profile }: { profile: Profile }) {
+  const sections = useVisibleSections();
   const short: Record<string, string> = {
     overview: "Overview",
     routines: "Routines",
@@ -480,19 +497,19 @@ function ProfileMobileNav({ profile }: { profile: Profile }) {
               <SheetTitle>{profile.subName}</SheetTitle>
             </SheetHeader>
             <nav className="mt-5 grid grid-cols-2 gap-2" aria-label="More sections">
-              {SECTIONS.filter(
-                (section) => !(MOBILE_SECTIONS as readonly string[]).includes(section.id),
-              ).map((section) => (
-                <SheetClose asChild key={section.id}>
-                  <Link
-                    to="/subs/$spaceId/$section"
-                    params={{ spaceId: profile.spaceId, section: section.id }}
-                    className="rounded-md border px-4 py-3 text-sm"
-                  >
-                    {section.label}
-                  </Link>
-                </SheetClose>
-              ))}
+              {sections
+                .filter((section) => !(MOBILE_SECTIONS as readonly string[]).includes(section.id))
+                .map((section) => (
+                  <SheetClose asChild key={section.id}>
+                    <Link
+                      to="/subs/$spaceId/$section"
+                      params={{ spaceId: profile.spaceId, section: section.id }}
+                      className="rounded-md border px-4 py-3 text-sm"
+                    >
+                      {section.label}
+                    </Link>
+                  </SheetClose>
+                ))}
               <SheetClose asChild>
                 <Link to="/dashboard" className="rounded-md border px-4 py-3 text-sm">
                   All Subs

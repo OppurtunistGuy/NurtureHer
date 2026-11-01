@@ -30,6 +30,8 @@ const server = spawn(process.execPath, [".output/server/index.mjs"], {
     HOST: "127.0.0.1",
     PORT: String(port),
     NOCTURNE_DB_PATH: join(directory, "spaces.sqlite"),
+    // This smoke test signs people up freely; production is invite-only.
+    OPEN_SIGNUP: "1",
     TELEGRAM_BOT_USERNAME: "nocturne_browser_test_bot",
     TELEGRAM_WEBHOOK_SECRET: "browser-test-secret-with-at-least-32-characters",
   },

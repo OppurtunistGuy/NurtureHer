@@ -1,12 +1,65 @@
 import { useEffect, useState } from "react";
+import { useRouter } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { accountActions } from "@/lib/nocturne/account";
+import { accountActions, useAccount } from "@/lib/nocturne/account";
 
-/** Log in or create an account. Shown whenever a shared action needs a signed-in person. */
-export function AuthPanel({ intro }: { intro?: string | undefined }) {
+const ACCESS_KEY = "boundsome_access";
+const readStored = () => {
+  try {
+    return sessionStorage.getItem(ACCESS_KEY) ?? "";
+  } catch {
+    return "";
+  }
+};
+const store = (code: string) => {
+  try {
+    if (code) sessionStorage.setItem(ACCESS_KEY, code);
+    else sessionStorage.removeItem(ACCESS_KEY);
+  } catch {
+    // Private windows can refuse storage; the link in the address bar still works.
+  }
+};
+
+/**
+ * Log in or create an account. Shown whenever a shared action needs a signed-in person.
+ * BoundSome is invite-only: "Create account" appears only with the owner's access link
+ * (#access=…) or a Master's live invitation (inviteToken).
+ */
+export function AuthPanel({
+  intro,
+  inviteToken,
+}: {
+  intro?: string | undefined;
+  inviteToken?: string | undefined;
+}) {
+  const me = useAccount(),
+    router = useRouter();
+  const inviteOnly = me.features?.inviteOnly !== false;
+  const [access, setAccess] = useState(""),
+    [accessError, setAccessError] = useState("");
   const [mode, setMode] = useState<"login" | "register" | "forgot" | "reset">("login");
+  // The owner's access link carries its code after the #; keep it for this tab only.
+  useEffect(() => {
+    const fromLink = new URLSearchParams(window.location.hash.slice(1)).get("access") ?? "";
+    const code = /^[a-f0-9]{32}$/.test(fromLink) ? fromLink : readStored();
+    if (!/^[a-f0-9]{32}$/.test(code)) return;
+    store(code);
+    void accountActions.checkAccess(code).then((result) => {
+      if (result.status === "valid") {
+        setAccess(code);
+        setMode((current) => (current === "login" ? "register" : current));
+      } else {
+        store("");
+        setAccessError(result.error ?? "This invite link can't be used.");
+      }
+    });
+  }, []);
+  useEffect(() => {
+    if (inviteToken) setMode((current) => (current === "login" ? "register" : current));
+  }, [inviteToken]);
+  const canRegister = !inviteOnly || !!access || !!inviteToken;
   const [resetToken, setResetToken] = useState(""),
     [notice, setNotice] = useState("");
   // The emailed link carries its one-time token after the #, so it never reaches a server log.
@@ -65,16 +118,43 @@ export function AuthPanel({ intro }: { intro?: string | undefined }) {
       return;
     }
     const result = registering
-      ? await accountActions.register(name.trim(), email.trim(), password)
+      ? await accountActions.register(name.trim(), email.trim(), password, {
+          access: access || undefined,
+          invite: inviteToken,
+        })
       : await accountActions.login(email.trim(), password);
     setBusy(false);
     if (!result.ok) setError(result.error);
-    else setPassword("");
+    else {
+      setPassword("");
+      // The access link is used up once the account exists.
+      if (registering && access) {
+        store("");
+        setAccess("");
+        const params = new URLSearchParams(window.location.hash.slice(1));
+        // Through the router's own history, so it doesn't put the old address back later.
+        if (params.has("access"))
+          router.history.replace(window.location.pathname + window.location.search);
+      }
+    }
   }
 
   return (
     <section aria-labelledby="auth-heading">
-      <div className="mb-6 grid grid-cols-2 gap-2">
+      {access && (
+        <p role="status" className="mb-4 rounded-md border border-gold/40 p-3 text-sm text-gold">
+          You're invited to BoundSome. Create your account to get started.
+        </p>
+      )}
+      {accessError && (
+        <p
+          role="alert"
+          className="mb-4 rounded-md border border-destructive/50 p-3 text-sm text-destructive"
+        >
+          {accessError}
+        </p>
+      )}
+      <div className={`mb-6 grid gap-2 ${canRegister ? "grid-cols-2" : "grid-cols-1"}`}>
         <Button
           variant={registering ? "outline" : "default"}
           onClick={() => {
@@ -85,16 +165,18 @@ export function AuthPanel({ intro }: { intro?: string | undefined }) {
         >
           Log in
         </Button>
-        <Button
-          variant={registering ? "default" : "outline"}
-          onClick={() => {
-            setMode("register");
-            setError("");
-            setNotice("");
-          }}
-        >
-          Create account
-        </Button>
+        {canRegister && (
+          <Button
+            variant={registering ? "default" : "outline"}
+            onClick={() => {
+              setMode("register");
+              setError("");
+              setNotice("");
+            }}
+          >
+            Create account
+          </Button>
+        )}
       </div>
       <form
         className="space-y-5"
@@ -122,7 +204,9 @@ export function AuthPanel({ intro }: { intro?: string | undefined }) {
             {notice}
           </p>
         )}
-        {intro && !resetting && !forgetting && <p className="text-sm text-gold">{intro}</p>}
+        {intro && !resetting && !forgetting && !(registering && access) && (
+          <p className="text-sm text-gold">{intro}</p>
+        )}
         {registering && (
           <div className="space-y-2">
             <Label htmlFor="account-name">Your name</Label>
@@ -212,7 +296,9 @@ export function AuthPanel({ intro }: { intro?: string | undefined }) {
             ? "For your safety, resetting signs you out on every device."
             : registering
               ? "Spaces you already opened on this browser move into your new account."
-              : "Signing in on this browser also moves any spaces you opened here before accounts existed."}
+              : canRegister
+                ? "Signing in on this browser also moves any spaces you opened here before accounts existed."
+                : "New here? BoundSome is invite-only for now. Open the invite link you were sent to create your account."}
         </p>
       </form>
     </section>
