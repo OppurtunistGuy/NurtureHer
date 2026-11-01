@@ -85,11 +85,16 @@ describe("rendered app workflow", () => {
     await go("/routines");
     expect(screen.queryByText("Wake-up check-in")).toBeNull();
     await go("/agreements");
-    expect(screen.getByRole("button", { name: /Waiting for the agreement/ })).toBeDisabled();
-    await click(screen.getByRole("button", { name: "Start from a short template" }));
-    await click(screen.getByRole("button", { name: "Save agreement" }));
-    expect(await screen.findByText("4. Rewards & consequences")).toBeInTheDocument();
+    // Every space starts with the standard agreement; the Master can edit it.
+    expect(screen.getByText("4. Rewards & consequences")).toBeInTheDocument();
     expect(screen.getByText("7. Review")).toBeInTheDocument();
+    await click(screen.getByRole("button", { name: "Edit agreement" }));
+    const editor = screen.getByLabelText("Write your agreement") as HTMLTextAreaElement;
+    fireEvent.change(editor, {
+      target: { value: editor.value.replace("### 1. Roles", "### 1. Roles for Maya") },
+    });
+    await click(screen.getByRole("button", { name: /^Save and share with / }));
+    expect(await screen.findByText("1. Roles for Maya")).toBeInTheDocument();
     await click(screen.getByRole("button", { name: "I acknowledge this agreement" }));
     await go("/routines");
     await click(screen.getByRole("button", { name: "New routine" }));

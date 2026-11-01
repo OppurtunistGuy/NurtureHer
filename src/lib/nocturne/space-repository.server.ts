@@ -430,7 +430,19 @@ export class SpaceRepository {
   }
   read(session: string, spaceId?: string) {
     const member = this.member(session, spaceId);
-    return this.snapshot(this.row(member.space_id), member.role, session);
+    return this.snapshot(this.upgraded(member.space_id), member.role, session);
+  }
+  /** Applies a pending agreement replacement on first load and saves it, so nobody sees old
+   * wording until someone happens to act. Guarded by revision against a concurrent write. */
+  private upgraded(spaceId: string): Row {
+    const row = this.row(spaceId),
+      state = this.state(row),
+      next = upgradeAgreement(state, this.now());
+    if (next === state) return row;
+    this.db
+      .prepare("UPDATE spaces SET body=?, revision=revision+1 WHERE id=? AND revision=?")
+      .run(JSON.stringify(bodySchema.parse(next)), spaceId, row.revision);
+    return this.row(spaceId);
   }
   openTelegram(session: string, spaceId: string, routineId: string) {
     return this.transaction(() => {

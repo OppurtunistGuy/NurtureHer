@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   AGREEMENT_MARKDOWN,
+  AGREEMENT_VERSION,
   CUSTOM_AGREEMENT_VERSION,
-  PERSONAL_AGREEMENT_MARKDOWN,
-  PERSONAL_AGREEMENT_VERSION,
   upgradeAgreement,
 } from "./agreement-document";
+
+/** Stand-in for the founders' wording, which is no longer shipped in the app. */
+const FOUNDERS_VERSION = "master-sub-2026-10-23-v1";
+const FOUNDERS_TEXT = "# BoundSome\n\n### 1. Dynamic & Authority\n\n- Until December 16, …";
 import { sampleRoutines } from "@/test/sample-routines";
 import { createInitialState } from "./store";
 import { readStoredState } from "./storage";
@@ -53,9 +56,12 @@ describe("supplied Master & Sub Agreement", () => {
       expect(next.routines).toEqual(state.routines);
     },
   );
-  it("starts new spaces with an empty agreement for the Master to write", () => {
+  it("starts new spaces with the standard agreement, ready for the Master to edit", () => {
     const s = createInitialState();
-    expect(s.agreement.document).toEqual({ version: CUSTOM_AGREEMENT_VERSION, markdown: "" });
+    expect(s.agreement.document).toEqual({
+      version: AGREEMENT_VERSION,
+      markdown: AGREEMENT_MARKDOWN,
+    });
     expect(s.agreement.boundaries).toEqual([]);
     expect(s.agreement.excluded).toEqual([]);
     expect(s.agreement.commWindows).toBe("");
@@ -63,45 +69,58 @@ describe("supplied Master & Sub Agreement", () => {
     expect(s.agreement.checkInSignal).toBe("YELLOW");
     expect(s.agreement.ack).toEqual({ dom: null, sub: null });
     expect(s.routines).toEqual([]);
-    // The optional template stays neutral.
+    // Standard points in every section, none of the founders' own.
     expect(AGREEMENT_MARKDOWN).not.toContain("December 16");
-    expect(AGREEMENT_MARKDOWN.match(/^### [1-7]\. /gm)).toHaveLength(7);
+    const sections = AGREEMENT_MARKDOWN.split(/^### [1-7]\. /m).slice(1);
+    expect(sections).toHaveLength(7);
+    for (const section of sections)
+      expect(section.match(/^- /gm)!.length).toBeGreaterThanOrEqual(3);
   });
-  it("never replaces an agreement a couple already has, whatever its version", () => {
-    for (const version of ["boundsome-template-2026-11-01-v1", CUSTOM_AGREEMENT_VERSION, "x"]) {
+  it("never replaces an agreement the Master wrote or edited", () => {
+    for (const version of [CUSTOM_AGREEMENT_VERSION, AGREEMENT_VERSION, "x"]) {
       const s = createInitialState();
       s.agreement.document = { version, markdown: "### Our rules\n\n- Be honest" };
       s.agreement.ack = { dom: stamp, sub: stamp };
       expect(upgradeAgreement(s, now)).toBe(s);
     }
   });
-  it.each([false, true])(
-    "keeps an existing space's personal agreement and acknowledgements untouched (paused=%s)",
-    (paused) => {
+  it.each([FOUNDERS_VERSION, "boundsome-template-2026-11-01-v1"])(
+    "replaces auto-installed wording (%s) with the standard agreement, archiving the old",
+    (version) => {
       const state = createInitialState();
-      state.agreement.document = {
-        version: PERSONAL_AGREEMENT_VERSION,
-        markdown: PERSONAL_AGREEMENT_MARKDOWN,
-      };
-      state.agreement.excluded = ["Our own limit"];
+      state.onboarded = true;
+      state.agreement.document = { version, markdown: FOUNDERS_TEXT };
+      state.agreement.excluded = ["Old limit"];
       state.agreement.ack = { dom: stamp, sub: stamp };
-      state.pause.active = paused;
-      expect(upgradeAgreement(state, now)).toBe(state);
-      expect(readStoredState(JSON.stringify(state)).agreement).toEqual(state.agreement);
-      // The legacy product heading is still renamed without touching anything else.
-      state.agreement.document.markdown = PERSONAL_AGREEMENT_MARKDOWN.replace(
-        /^# BoundSome/,
-        "# NOCTURNE TOGETHER",
-      );
-      const renamed = upgradeAgreement(state, now);
-      expect(renamed.agreement.document).toEqual({
-        version: PERSONAL_AGREEMENT_VERSION,
-        markdown: PERSONAL_AGREEMENT_MARKDOWN,
+      const next = upgradeAgreement(state, now);
+      expect(next.agreement.document).toEqual({
+        version: AGREEMENT_VERSION,
+        markdown: AGREEMENT_MARKDOWN,
       });
-      expect(renamed.agreement.ack).toEqual({ dom: stamp, sub: stamp });
-      expect(renamed.agreement.excluded).toEqual(["Our own limit"]);
+      expect(next.agreement.excluded).toEqual([]);
+      expect(next.agreement.ack).toEqual({ dom: null, sub: null });
+      expect(next.agreement.history?.[0]?.document?.markdown).toBe(FOUNDERS_TEXT);
+      expect(next.agreement.history?.[0]?.excluded).toEqual(["Old limit"]);
+      expect(next.agreement.history?.[0]?.ack).toEqual({ dom: stamp, sub: stamp });
+      // Runs once: a reload changes nothing more.
+      expect(upgradeAgreement(next, now)).toBe(next);
+      // While paused it waits for both to resume.
+      state.pause.active = true;
+      const waiting = upgradeAgreement(state, now);
+      expect(waiting.agreement).toBe(state.agreement);
+      expect(waiting.agreementUpdatePending).toBe(true);
     },
   );
+  it("fills a blank agreement with the standard one", () => {
+    const state = createInitialState();
+    state.agreement.document = { version: CUSTOM_AGREEMENT_VERSION, markdown: "" };
+    const next = upgradeAgreement(state, now);
+    expect(next.agreement.document).toEqual({
+      version: AGREEMENT_VERSION,
+      markdown: AGREEMENT_MARKDOWN,
+    });
+    expect(next.agreement.history ?? []).toHaveLength(0);
+  });
   it("migrates existing data once and archives the previous terms and acknowledgements", () => {
     const old = legacy();
     old.messages = [{ id: "note", by: "sub", at: stamp, text: "Keep this note" }];
@@ -139,7 +158,10 @@ describe("supplied Master & Sub Agreement", () => {
     s = transition(s, { type: "resume" }, ctx);
     s = upgradeAgreement(s, now);
     expect(s.pause.active).toBe(false);
-    expect(s.agreement.document).toEqual({ version: CUSTOM_AGREEMENT_VERSION, markdown: "" });
+    expect(s.agreement.document).toEqual({
+      version: AGREEMENT_VERSION,
+      markdown: AGREEMENT_MARKDOWN,
+    });
     expect(s.agreement.ack).toEqual({ dom: null, sub: null });
   });
   for (const signal of ["RED", "YELLOW"] as const)
@@ -170,7 +192,8 @@ describe("supplied Master & Sub Agreement", () => {
       version: CUSTOM_AGREEMENT_VERSION,
       markdown: "### Our rules\n\n- Be honest",
     });
-    expect(s.agreement.history ?? []).toHaveLength(0);
+    // The standard agreement it replaced is kept in History.
+    expect(s.agreement.history?.[0]?.document?.version).toBe(AGREEMENT_VERSION);
     s = transition(s, { type: "agreement.ack" }, ctx);
     s = transition(s, { type: "view", role: "sub" }, ctx);
     s = transition(s, { type: "agreement.ack" }, ctx);

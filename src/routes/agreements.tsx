@@ -6,11 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { uiActions as actions, useNocturne, useSpaceConnection } from "@/lib/nocturne/store";
 import { useUnsavedChanges } from "@/lib/nocturne/unsaved";
-import {
-  AGREEMENT_MARKDOWN,
-  AGREEMENT_MAX_LENGTH,
-  PERSONAL_AGREEMENT_VERSION,
-} from "@/lib/nocturne/agreement-document";
+import { AGREEMENT_MARKDOWN, AGREEMENT_MAX_LENGTH } from "@/lib/nocturne/agreement-document";
 
 export const Route = createFileRoute("/agreements")({
   head: () => ({
@@ -78,12 +74,6 @@ function AgreementsPage() {
           </p>
         </div>
       </div>
-      {a.document?.version === PERSONAL_AGREEMENT_VERSION && (
-        <p className="mb-6 border-l-2 border-wine pl-4 text-sm leading-6 text-muted-foreground">
-          Until December 16: focus on agreed sessions around exams and family commitments. Review
-          the arrangement afterward. The app does not automatically expand its scope on that date.
-        </p>
-      )}
       <p className="text-sm leading-7 text-muted-foreground">{intro}</p>
       <div className="mt-7" aria-label="Agreement text">
         {sections.length ? (
@@ -333,7 +323,7 @@ function AgreementEditor() {
     connection = useSpaceConnection();
   const current = s.agreement.document?.markdown ?? "";
   const [draft, setDraft] = useState(current),
-    [open, setOpen] = useState(!current.trim()),
+    [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [copyFrom, setCopyFrom] = useState("");
   useEffect(() => setDraft(current), [current]);
@@ -364,77 +354,99 @@ function AgreementEditor() {
       setCopyFrom("");
     }
   }
+  const paused = s.pause.active;
   return (
-    <details
-      open={open}
-      onToggle={(event) => setOpen((event.target as HTMLDetailsElement).open)}
-      className="my-5 rounded-md border border-gold/40 p-4"
+    <section
+      aria-label="Edit the agreement"
+      className="my-5 rounded-md border border-gold/40 bg-gold/5 p-4"
     >
-      <summary className="cursor-pointer font-display text-xl text-ivory">
-        {current.trim() ? "Edit the agreement" : "Write your agreement"}
-      </summary>
-      <div className="mt-4 space-y-3">
-        <p className="text-xs leading-6 text-muted-foreground">
-          Write it in your own words: your rules, limits and expectations. Start a line with
-          &quot;### &quot; for a section heading and &quot;- &quot; for a point. Saving asks both of
-          you to acknowledge it again.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => {
-              setDraft(AGREEMENT_MARKDOWN);
-              toast("Template added. Make it yours, then save.");
-            }}
-          >
-            Start from a short template
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="font-display text-xl text-ivory">You can edit this agreement</h3>
+          <p className="mt-1 text-xs leading-6 text-muted-foreground">
+            Only you, as the Master, can change it. Saving shares it with {s.names.sub}, who reads
+            it and acknowledges or proposes a change. Routines start once you both acknowledge.
+          </p>
+          {paused && (
+            <p className="mt-1 text-xs text-gold">
+              The space is paused. Editing unlocks after you both resume.
+            </p>
+          )}
+        </div>
+        {!open && (
+          <Button type="button" disabled={paused} onClick={() => setOpen(true)}>
+            Edit agreement
           </Button>
-          {others.map((space) => (
+        )}
+      </div>
+      {open && (
+        <div className="mt-4 space-y-3">
+          <p className="text-xs leading-6 text-muted-foreground">
+            Write it in your own words: your rules, limits and expectations. Start a line with
+            &quot;### &quot; for a section heading and &quot;- &quot; for a point.
+          </p>
+          <div className="flex flex-wrap gap-2">
             <Button
-              key={space.id}
               type="button"
               size="sm"
               variant="outline"
-              disabled={!!copyFrom}
-              onClick={() => copy(space.id)}
+              onClick={() => {
+                setDraft(AGREEMENT_MARKDOWN);
+                toast("Standard agreement added. Make it yours, then save.");
+              }}
             >
-              {copyFrom === space.id ? "Copying…" : `Copy my agreement with ${space.partnerName}`}
+              Start again from the standard agreement
             </Button>
-          ))}
-        </div>
-        <Textarea
-          aria-label="Write your agreement"
-          value={draft}
-          maxLength={AGREEMENT_MAX_LENGTH}
-          rows={14}
-          placeholder="For example: ### Our rules"
-          onChange={(event) => setDraft(event.target.value)}
-        />
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            disabled={!changed || !draft.trim() || busy}
-            onClick={async () => {
-              setBusy(true);
-              const result = await actions.writeAgreement(draft);
-              setBusy(false);
-              if (result.ok) toast.success("Agreement saved. Both of you acknowledge it below.");
-            }}
-          >
-            {busy ? "Saving…" : "Save agreement"}
-          </Button>
-          {changed && (
-            <Button type="button" variant="ghost" onClick={() => setDraft(current)}>
-              Discard changes
+            {others.map((space) => (
+              <Button
+                key={space.id}
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!!copyFrom}
+                onClick={() => copy(space.id)}
+              >
+                {copyFrom === space.id ? "Copying…" : `Copy my agreement with ${space.partnerName}`}
+              </Button>
+            ))}
+          </div>
+          <Textarea
+            aria-label="Write your agreement"
+            value={draft}
+            maxLength={AGREEMENT_MAX_LENGTH}
+            rows={14}
+            placeholder="For example: ### Our rules"
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              disabled={!changed || !draft.trim() || busy}
+              onClick={async () => {
+                setBusy(true);
+                const result = await actions.writeAgreement(draft);
+                setBusy(false);
+                if (result.ok) toast.success("Agreement saved. Both of you acknowledge it below.");
+              }}
+            >
+              {busy ? "Saving…" : `Save and share with ${s.names.sub}`}
             </Button>
-          )}
-          <span className="text-xs text-muted-foreground">
-            {draft.length.toLocaleString()} / {AGREEMENT_MAX_LENGTH.toLocaleString()}
-          </span>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setDraft(current);
+                setOpen(false);
+              }}
+            >
+              {changed ? "Discard changes" : "Close"}
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              {draft.length.toLocaleString()} / {AGREEMENT_MAX_LENGTH.toLocaleString()}
+            </span>
+          </div>
         </div>
-      </div>
-    </details>
+      )}
+    </section>
   );
 }

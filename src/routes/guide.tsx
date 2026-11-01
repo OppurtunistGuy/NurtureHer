@@ -88,10 +88,11 @@ function GuidePage() {
               days.
             </li>
             <li>
-              Open your Sub's card and go to <strong>Agreement and limits</strong>. Write your
-              agreement in your own words. New to this? Choose{" "}
-              <strong>Start from a short template</strong> and make it yours. With a second Sub, you
-              can copy your first agreement and change it for them. Each Sub has their own.
+              Open your Sub's card and go to <strong>Agreement and limits</strong>. Your space
+              starts with a standard Master &amp; Sub agreement. Choose{" "}
+              <strong>Edit agreement</strong> to make it yours, then <strong>Save and share</strong>
+              . With a second Sub, you can copy your first agreement and change it for them. Each
+              Sub has their own.
             </li>
             <li>
               Your Sub reads it and can suggest changes. Nothing starts until you both acknowledge
@@ -122,7 +123,7 @@ function GuidePage() {
           <Steps>
             <li>Open your Master's invite link, create your account and accept.</li>
             <li>
-              Read the agreement your Master wrote and acknowledge it. Want something changed? Use{" "}
+              Read the agreement your Master shared and acknowledge it. Want something changed? Use{" "}
               <strong>Propose an addition</strong> on the agreement page. Nothing starts until you
               both have acknowledged.
             </li>
