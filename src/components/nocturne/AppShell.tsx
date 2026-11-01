@@ -430,7 +430,8 @@ function useVisibleSections() {
 }
 
 function ProfileSections({ profile }: { profile: Profile }) {
-  const sections = useVisibleSections();
+  const sections = useVisibleSections(),
+    gamesOn = useGamesEnabled();
   return (
     <>
       {sections.map((section) => (
@@ -444,13 +445,22 @@ function ProfileSections({ profile }: { profile: Profile }) {
           {section.label}
         </Link>
       ))}
+      {gamesOn && (
+        <Link
+          to="/games"
+          className="whitespace-nowrap rounded-md px-2 py-2 text-xs text-muted-foreground hover:text-foreground"
+        >
+          Games
+        </Link>
+      )}
     </>
   );
 }
 
 const MOBILE_SECTIONS = ["overview", "routines", "submissions", "points"] as const;
 function ProfileMobileNav({ profile }: { profile: Profile }) {
-  const sections = useVisibleSections();
+  const sections = useVisibleSections(),
+    gamesOn = useGamesEnabled();
   const short: Record<string, string> = {
     overview: "Overview",
     routines: "Routines",
@@ -509,6 +519,13 @@ function ProfileMobileNav({ profile }: { profile: Profile }) {
                     </Link>
                   </SheetClose>
                 ))}
+              {gamesOn && (
+                <SheetClose asChild>
+                  <Link to="/games" className="rounded-md border px-4 py-3 text-sm">
+                    Games
+                  </Link>
+                </SheetClose>
+              )}
               <SheetClose asChild>
                 <Link to="/dashboard" className="rounded-md border px-4 py-3 text-sm">
                   All Subs
