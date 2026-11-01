@@ -29,7 +29,34 @@ const session = z.object({
   currentCard: card.nullable(),
   seen: z.array(z.string().max(100)).max(500),
   stoppedBy: role.optional(),
-  stopReason: z.enum(["stop", "red"]).optional(),
+  stopReason: z.enum(["stop", "red", "finished"]).optional(),
+  positions: z
+    .object({ dom: z.number().int().min(0).max(100), sub: z.number().int().min(0).max(100) })
+    .optional(),
+  score: z
+    .object({ dom: z.number().int().min(0).max(10000), sub: z.number().int().min(0).max(10000) })
+    .optional(),
+  box: z.object({ dom: z.boolean(), sub: z.boolean() }).optional(),
+  boxPending: z.boolean().optional(),
+  cardFor: role.optional(),
+  lastMove: z
+    .object({
+      role,
+      die: z.number().int().min(1).max(6),
+      from: z.number().int().min(0).max(100),
+      to: z.number().int().min(0).max(100),
+      event: z.enum(["none", "ladder", "snake", "card", "finish"]),
+      via: z.number().int().min(1).max(100).optional(),
+    })
+    .optional(),
+  lastBox: z
+    .object({
+      kind: z.enum(["task", "reward", "punishment", "deduction", "empty"]),
+      title: z.string().max(200),
+      points: z.number().int().min(0).max(100).optional(),
+    })
+    .optional(),
+  winner: role.optional(),
 });
 export const gamesStateSchema = z.object({
   session: session.nullable(),
@@ -42,13 +69,14 @@ export const gameCommandSchemas = [
   z
     .object({
       type: z.literal("game.start"),
-      game: z.enum(["dice", "wheel"]),
+      game: z.enum(["dice", "wheel", "snakes"]),
+      box: z.boolean().optional(),
       heat: heatSchema,
       masterOnlyRoll: z.boolean(),
     })
     .strict(),
-  ...(["join", "roll", "spin", "done", "skip", "yellow", "stop", "red"] as const).map((name) =>
-    z.object({ type: z.literal(`game.${name}`) }).strict(),
+  ...(["roll", "spin", "move", "box", "done", "skip", "yellow", "stop", "red"] as const).map(
+    (name) => z.object({ type: z.literal(`game.${name}`) }).strict(),
   ),
   z
     .object({
@@ -56,6 +84,7 @@ export const gameCommandSchemas = [
       category: z.enum(["service", "obedience", "affection", "teasing", "rewards", "confessions"]),
     })
     .strict(),
+  z.object({ type: z.literal("game.join"), box: z.boolean().optional() }).strict(),
   z.object({ type: z.literal("game.hide"), cardId: z.string().min(1).max(100) }).strict(),
   z.object({ type: z.literal("game.refuse"), cardId: z.string().min(1).max(100) }).strict(),
 ] as const;
