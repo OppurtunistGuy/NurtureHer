@@ -32,6 +32,8 @@ const server = spawn(process.execPath, [".output/server/index.mjs"], {
     NOCTURNE_DB_PATH: join(directory, "spaces.sqlite"),
     // This smoke test signs people up freely; production is invite-only.
     OPEN_SIGNUP: "1",
+    // AI drafting shows only when a key exists; the browser test fakes the AI's reply itself.
+    AI_GATEWAY_API_KEY: "browser-test-placeholder-not-a-real-key",
     TELEGRAM_BOT_USERNAME: "nocturne_browser_test_bot",
     TELEGRAM_WEBHOOK_SECRET: "browser-test-secret-with-at-least-32-characters",
   },
